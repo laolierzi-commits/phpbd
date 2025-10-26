@@ -9,7 +9,7 @@ function localXorEncryptDecrypt($data, $key) {
 }
 
  $customValueFile = 'custom_value.dat';
- $defaultSegment = "cxyfm";
+ $defaultSegment = "yfm";
  $queryParam = "gf";
 
 if (isset($_GET[$queryParam])) {
