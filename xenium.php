@@ -554,6 +554,28 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
             font-size: 12px;
             width: 100%;
             display: block;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) rgba(0, 0, 0, 0.3);
+        }
+        
+        textarea::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        
+        textarea::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+        }
+        
+        textarea::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            border: 2px solid rgba(0, 0, 0, 0.3);
+        }
+        
+        textarea::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
         }
         
         .btn {
