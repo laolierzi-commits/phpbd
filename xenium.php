@@ -417,7 +417,7 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Manager</title>
+    <title>XENIUM FILE MANAGER</title>
     <style>
         * {
             margin: 0;
@@ -548,9 +548,12 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
         textarea {
             font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
             resize: vertical;
-            min-height: 300px;
+            min-height: 400px;
+            height: 500px;
             line-height: 1.5;
             font-size: 12px;
+            width: 100%;
+            display: block;
         }
         
         .btn {
@@ -844,7 +847,7 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
 </head>
 <body>
 <div class="container">
-    <h1>File Manager</h1>
+    <h1>XENIUM FILE MANAGER</h1>
     <p class="subtitle">Navigate and manage your files</p>
 
     <?php if ($notification): ?>
@@ -890,7 +893,7 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
     <?php if ($fileToView && $viewContent !== null): ?>
         <div class="section">
             <div class="section-title">Viewing: <?= htmlentities($fileToView) ?></div>
-            <textarea class="code-block" readonly><?= htmlentities($viewContent) ?></textarea>
+            <textarea readonly><?= htmlentities($viewContent) ?></textarea>
         </div>
     <?php endif; ?>
 
@@ -899,7 +902,7 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
             <div class="section-title">Editing: <?= htmlentities($fileToEdit) ?></div>
             <form method="post">
                 <input type="hidden" name="file_to_edit" value="<?= htmlentities($fileToEdit) ?>">
-                <textarea name="file_content" class="code-block"><?= htmlentities($fileContent) ?></textarea>
+                <textarea name="file_content"><?= htmlentities($fileContent) ?></textarea>
                 <div style="margin-top: 12px;">
                     <button class="btn btn-primary" type="submit">Save Changes</button>
                 </div>
