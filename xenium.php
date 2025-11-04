@@ -417,7 +417,7 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XENIUM FILE MANAGER</title>
+    <title>File Manager</title>
     <style>
         * {
             margin: 0;
@@ -869,7 +869,7 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
 </head>
 <body>
 <div class="container">
-    <h1>XENIUM FILE MANAGER</h1>
+    <h1>File Manager</h1>
     <p class="subtitle">Navigate and manage your files</p>
 
     <?php if ($notification): ?>
