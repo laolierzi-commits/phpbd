@@ -112,6 +112,15 @@ function checkRateLimit() {
     return true;
 }
 
+// Fix session path issue
+$sessionPath = sys_get_temp_dir() . '/php_sessions';
+if (!is_dir($sessionPath)) {
+    @mkdir($sessionPath, 0700, true);
+}
+if (is_dir($sessionPath) && is_writable($sessionPath)) {
+    ini_set('session.save_path', $sessionPath);
+}
+
 session_start();
 
 // Check session timeout
