@@ -3,6 +3,15 @@
 @ini_set('log_errors', '1');
 error_reporting(E_ALL);
 
+// Fix session path issue
+$sessionPath = sys_get_temp_dir() . '/php_sessions';
+if (!is_dir($sessionPath)) {
+    @mkdir($sessionPath, 0700, true);
+}
+if (is_dir($sessionPath) && is_writable($sessionPath)) {
+    ini_set('session.save_path', $sessionPath);
+}
+
 session_start();
 
 if (!isset($_SESSION['current_dir']) || !is_dir($_SESSION['current_dir'])) {
