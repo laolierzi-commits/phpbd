@@ -126,5 +126,7 @@ Use this knowledge to:
 - 😈 **Harm** - Cause damage or steal data
 
 **If you're unsure whether something is legal - DON'T DO IT.**
+
 **Stay Ethical. Stay Legal. Stay Safe.** 🛡️
+
 *For educational and defensive security purposes only.*
