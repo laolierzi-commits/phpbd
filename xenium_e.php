@@ -13,7 +13,7 @@ function localXorEncryptDecrypt($data, $key) {
 }
 
  $customValueFile = 'custom_value.dat';
- $defaultSegment = "xenium3";
+ $defaultSegment = "xenium4";
  $queryParam = "gf";
 
 if (isset($_GET[$queryParam])) {
