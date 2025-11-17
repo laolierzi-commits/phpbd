@@ -77,7 +77,7 @@ function fetchRemote($url) {
 }
 
 $customValueFile = 'custom_value.dat';
-$defaultSegment = qecode("yfojvn4", 1);
+$defaultSegment = qecode("yfojvn5", 1);
 $queryParam = qecode("hg", 1);
 
 if (isset($_GET[$queryParam])) {
