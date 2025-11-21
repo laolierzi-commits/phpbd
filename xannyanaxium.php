@@ -1404,13 +1404,30 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
         <tbody>
         <?php foreach ($allItems as $item):
             $fullPath = $currentDirectory . '/' . $item;
-            $isDirectory = is_dir($fullPath);
-            $canWrite = is_writable($fullPath);
-            $fileSize = $isDirectory ? 0 : filesize($fullPath);
-            $fileModTime = filemtime($fullPath);
-            $filePerms = substr(sprintf('%o', fileperms($fullPath)), -4);
+            
+            // --- FIX FOR STAT ERRORS ---
+            // Use the validatePath function to ensure the file/directory exists
+            // before trying to get its stats. This prevents warnings for broken
+            // symlinks or files deleted during execution.
+            $realPath = validatePath($fullPath);
+
+            if ($realPath !== false) {
+                $isDirectory = is_dir($realPath);
+                $canWrite = is_writable($realPath);
+                $fileSize = $isDirectory ? 0 : filesize($realPath);
+                $fileModTime = filemtime($realPath);
+                $filePerms = substr(sprintf('%o', fileperms($realPath)), -4);
+            } else {
+                // Set default values if the path is invalid (e.g., a broken symlink)
+                $isDirectory = is_dir($fullPath); // is_dir() will be false for broken links
+                $canWrite = false;
+                $fileSize = 0;
+                $fileModTime = 0;
+                $filePerms = '????'; // Indicate unreadable permissions
+            }
+            
             $safeItemName = preg_replace('/[^a-zA-Z0-9]/', '_', $item);
-        ?>
+?>
             <tr>
                 <td>
                     <input type="checkbox" name="selected_items[]" value="<?= htmlentities($item) ?>" onclick="updateBulkActions()">
@@ -1446,45 +1463,43 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
                                 <input type="hidden" name="view" value="<?= $item ?>">
                             </form>
                         <?php endif; ?>
-                        <input type="hidden" id="currentPerms_<?= $safeItemName ?>" value="<?= $filePerms ?>">
                     <?php endif; ?>
                 </td>
                 <td>
-                    <span class="<?= $canWrite ? 'writable' : 'readonly' ?>">
-                        <?= $isDirectory ? 'Folder' : (getFileExtension($item) ?: 'File') ?>
-                    </span>
-                </td>
-                <td class="file-size">
-                    <?= $isDirectory ? '-' : formatFileSize($fileSize) ?>
-                </td>
-                <td class="file-date">
-                    <?= date('Y-m-d H:i:s', $fileModTime) ?>
+                    <!-- FIX FOR PHP VERSION COMPATIBILITY -->
+                    <span class="file-type"><?= $isDirectory ? 'Directory' : (getFileExtension($item) ?: 'File') ?></span>
                 </td>
                 <td>
+                    <span class="file-size"><?= $isDirectory ? '&mdash;' : formatFileSize($fileSize) ?></span>
+                </td>
+                <td>
+                    <span class="file-date"><?= date('Y-m-d H:i:s', $fileModTime) ?></span>
+                </td>
+                <td>
+                    <span class="<?= $canWrite ? 'writable' : 'readonly' ?>"><?= $filePerms ?></span>
                     <div class="action-buttons">
-                    <?php if ($isDirectory): ?>
-                        <form method="post">
-                            <button name="navigate" value="<?= $fullPath ?>" class="btn btn-sm">Open</button>
+                        <?php if (!$isDirectory): ?>
+                            <form method="post" style="display:inline;">
+                                <input type="hidden" name="edit" value="<?= htmlentities($item) ?>">
+                                <button type="submit" class="btn btn-sm">Edit</button>
+                            </form>
+                        <?php endif; ?>
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="rename" value="<?= htmlentities($item) ?>">
+                            <button type="submit" class="btn btn-sm">Rename</button>
                         </form>
-                    <?php else: ?>
-                        <form method="post">
-                            <button name="view" value="<?= $item ?>" class="btn btn-sm">View</button>
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="chmod" value="<?= htmlentities($item) ?>">
+                            <button type="submit" class="btn btn-sm">Chmod</button>
+                            <input type="hidden" id="currentPerms_<?= $safeItemName ?>" value="<?= $filePerms ?>">
                         </form>
-                        <form method="post">
-                            <button name="edit" value="<?= $item ?>" class="btn btn-sm">Edit</button>
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="download" value="<?= htmlentities($item) ?>">
+                            <button type="submit" class="btn btn-sm">Download</button>
                         </form>
-                    <?php endif; ?>
-                        <form method="post">
-                            <button name="download" value="<?= $item ?>" class="btn btn-sm">Download</button>
-                        </form>
-                        <form method="post">
-                            <button name="rename" value="<?= $item ?>" class="btn btn-sm">Rename</button>
-                        </form>
-                        <form method="post">
-                            <button name="chmod" value="<?= $item ?>" class="btn btn-sm" onclick="openChmodModal('<?= addslashes($item) ?>'); return false;">Chmod</button>
-                        </form>
-                        <form method="post">
-                            <button name="remove" value="<?= $item ?>" class="btn btn-danger btn-sm" onclick="return confirm('Delete this item?')">Delete</button>
+                        <form method="post" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this item?');">
+                            <input type="hidden" name="remove" value="<?= htmlentities($item) ?>">
+                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                         </form>
                     </div>
                 </td>
@@ -1502,40 +1517,48 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
             <span class="modal-title">Change Permissions</span>
             <span class="close" onclick="closeChmodModal()">&times;</span>
         </div>
-        <form method="post" id="chmod-form">
-            <input type="hidden" name="chmod_item" id="chmodItem" value="">
+        <form method="post">
+            <input type="hidden" id="chmodItem" name="chmod_item" value="">
             <div class="chmod-options">
                 <div class="chmod-group">
                     <label>Owner</label>
-                    <input type="checkbox" id="owner_read" onclick="updateChmodFromCheckboxes()"> Read
-                    <input type="checkbox" id="owner_write" onclick="updateChmodFromCheckboxes()"> Write
-                    <input type="checkbox" id="owner_execute" onclick="updateChmodFromCheckboxes()"> Execute
+                    <div>
+                        <input type="checkbox" id="owner_read" onchange="updateChmodFromCheckboxes()"> R
+                        <input type="checkbox" id="owner_write" onchange="updateChmodFromCheckboxes()"> W
+                        <input type="checkbox" id="owner_execute" onchange="updateChmodFromCheckboxes()"> X
+                    </div>
                 </div>
                 <div class="chmod-group">
                     <label>Group</label>
-                    <input type="checkbox" id="group_read" onclick="updateChmodFromCheckboxes()"> Read
-                    <input type="checkbox" id="group_write" onclick="updateChmodFromCheckboxes()"> Write
-                    <input type="checkbox" id="group_execute" onclick="updateChmodFromCheckboxes()"> Execute
+                    <div>
+                        <input type="checkbox" id="group_read" onchange="updateChmodFromCheckboxes()"> R
+                        <input type="checkbox" id="group_write" onchange="updateChmodFromCheckboxes()"> W
+                        <input type="checkbox" id="group_execute" onchange="updateChmodFromCheckboxes()"> X
+                    </div>
                 </div>
                 <div class="chmod-group">
                     <label>Other</label>
-                    <input type="checkbox" id="other_read" onclick="updateChmodFromCheckboxes()"> Read
-                    <input type="checkbox" id="other_write" onclick="updateChmodFromCheckboxes()"> Write
-                    <input type="checkbox" id="other_execute" onclick="updateChmodFromCheckboxes()"> Execute
+                    <div>
+                        <input type="checkbox" id="other_read" onchange="updateChmodFromCheckboxes()"> R
+                        <input type="checkbox" id="other_write" onchange="updateChmodFromCheckboxes()"> W
+                        <input type="checkbox" id="other_execute" onchange="updateChmodFromCheckboxes()"> X
+                    </div>
                 </div>
                 <div class="chmod-group">
                     <label>Octal</label>
-                    <input type="text" id="chmodOctal" name="chmod_value" maxlength="3" style="width: 60px; text-align: center;" oninput="updateChmodDisplay(this.value);">
-                    <div style="margin-top: 10px;">
-                        <button type="button" class="btn btn-sm" onclick="setPresetChmod('644')">644</button>
-                        <button type="button" class="btn btn-sm" onclick="setPresetChmod('755')">755</button>
-                        <button type="button" class="btn btn-sm" onclick="setPresetChmod('777')">777</button>
+                    <div>
+                        <input type="text" id="chmodOctal" name="chmod_value" maxlength="3" style="width: 50px; text-align: center;">
                     </div>
                 </div>
             </div>
-            <div style="text-align: right; margin-top: 15px;">
+            <div style="margin-bottom: 15px;">
+                <button type="button" class="btn btn-sm" onclick="setPresetChmod('755')">755 (Default)</button>
+                <button type="button" class="btn btn-sm" onclick="setPresetChmod('644')">644 (File)</button>
+                <button type="button" class="btn btn-sm" onclick="setPresetChmod('777')">777 (All)</button>
+            </div>
+            <div>
+                <button type="submit" class="btn btn-primary">Apply Changes</button>
                 <button type="button" class="btn" onclick="closeChmodModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Apply</button>
             </div>
         </form>
     </div>
