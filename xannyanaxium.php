@@ -137,6 +137,111 @@ function runCommand($cmd) {
     return "Command execution not available";
 }
 
+// Handle bulk delete - MUST BE BEFORE NAVIGATION
+if (isset($_POST['bulk_delete']) && isset($_POST['selected_items']) && is_array($_POST['selected_items'])) {
+    $deleted = 0;
+    $failed = 0;
+    
+    foreach ($_POST['selected_items'] as $item) {
+        $targetPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $item);
+        
+        if ($targetPath === false) {
+            $failed++;
+            continue;
+        }
+        
+        if (is_file($targetPath)) {
+            if (@unlink($targetPath)) {
+                $deleted++;
+            } else {
+                $failed++;
+            }
+        } elseif (is_dir($targetPath)) {
+            try {
+                $iterator = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
+                    RecursiveIteratorIterator::CHILD_FIRST
+                );
+                
+                foreach ($iterator as $file) {
+                    if ($file->isDir()) {
+                        @rmdir($file->getRealPath());
+                    } else {
+                        @unlink($file->getRealPath());
+                    }
+                }
+                
+                if (@rmdir($targetPath)) {
+                    $deleted++;
+                } else {
+                    $failed++;
+                }
+            } catch (Exception $e) {
+                $failed++;
+            }
+        }
+    }
+    
+    if ($deleted > 0) {
+        $notification = "Deleted $deleted item(s)";
+        if ($failed > 0) {
+            $notification .= " (Failed: $failed)";
+        }
+    } elseif ($failed > 0) {
+        $errorMsg = "Failed to delete $failed item(s)";
+    }
+}
+
+// Handle bulk download - MUST BE BEFORE NAVIGATION
+if (isset($_POST['bulk_download']) && isset($_POST['selected_items']) && is_array($_POST['selected_items'])) {
+    if (class_exists('ZipArchive')) {
+        $zipName = 'selected_files_' . time() . '.zip';
+        $zipPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $zipName;
+        
+        $zip = new ZipArchive();
+        if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
+            foreach ($_POST['selected_items'] as $item) {
+                $targetPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $item);
+                
+                if ($targetPath === false) continue;
+                
+                if (is_file($targetPath)) {
+                    $zip->addFile($targetPath, basename($targetPath));
+                } elseif (is_dir($targetPath)) {
+                    $files = new RecursiveIteratorIterator(
+                        new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
+                        RecursiveIteratorIterator::SELF_FIRST
+                    );
+                    
+                    foreach ($files as $file) {
+                        $filePath = $file->getRealPath();
+                        $relativePath = basename($targetPath) . '/' . substr($filePath, strlen($targetPath) + 1);
+                        
+                        if ($file->isDir()) {
+                            $zip->addEmptyDir($relativePath);
+                        } else {
+                            $zip->addFile($filePath, $relativePath);
+                        }
+                    }
+                }
+            }
+            
+            $zip->close();
+            
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . $zipName . '"');
+            header('Content-Length: ' . filesize($zipPath));
+            readfile($zipPath);
+            @unlink($zipPath);
+            exit;
+        } else {
+            $errorMsg = 'Bulk download failed: Could not create zip file';
+        }
+    } else {
+        $errorMsg = 'Bulk download failed: ZipArchive not available';
+    }
+}
+
 if (isset($_POST['navigate'])) {
     $targetDir = $_POST['navigate'];
     if (is_dir($targetDir)) {
@@ -333,109 +438,6 @@ sort($files);
  $itemToChmod = $_POST['chmod'] ?? null;
  $fileContent = $fileToEdit ? @file_get_contents($currentDirectory . '/' . $fileToEdit) : null;
  $viewContent = $fileToView ? @file_get_contents($currentDirectory . '/' . $fileToView) : null;
-
-// Handle bulk delete
-if (isset($_POST['bulk_delete']) && isset($_POST['selected_items']) && is_array($_POST['selected_items'])) {
-    $deleted = 0;
-    $failed = 0;
-    
-    foreach ($_POST['selected_items'] as $item) {
-        $targetPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $item);
-        
-        if ($targetPath === false) {
-            $failed++;
-            continue;
-        }
-        
-        if (is_file($targetPath)) {
-            if (@unlink($targetPath)) {
-                $deleted++;
-            } else {
-                $failed++;
-            }
-        } elseif (is_dir($targetPath)) {
-            try {
-                $iterator = new RecursiveIteratorIterator(
-                    new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
-                    RecursiveIteratorIterator::CHILD_FIRST
-                );
-                
-                foreach ($iterator as $file) {
-                    if ($file->isDir()) {
-                        @rmdir($file->getRealPath());
-                    } else {
-                        @unlink($file->getRealPath());
-                    }
-                }
-                
-                if (@rmdir($targetPath)) {
-                    $deleted++;
-                } else {
-                    $failed++;
-                }
-            } catch (Exception $e) {
-                $failed++;
-            }
-        }
-    }
-    
-    if ($deleted > 0) {
-        $notification = "Deleted $deleted item(s)";
-    }
-    if ($failed > 0) {
-        $errorMsg = "Failed to delete $failed item(s)";
-    }
-}
-
-// Handle bulk download
-if (isset($_POST['bulk_download']) && isset($_POST['selected_items']) && is_array($_POST['selected_items'])) {
-    if (class_exists('ZipArchive')) {
-        $zipName = 'selected_files_' . time() . '.zip';
-        $zipPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $zipName;
-        
-        $zip = new ZipArchive();
-        if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
-            foreach ($_POST['selected_items'] as $item) {
-                $targetPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $item);
-                
-                if ($targetPath === false) continue;
-                
-                if (is_file($targetPath)) {
-                    $zip->addFile($targetPath, basename($targetPath));
-                } elseif (is_dir($targetPath)) {
-                    $files = new RecursiveIteratorIterator(
-                        new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
-                        RecursiveIteratorIterator::SELF_FIRST
-                    );
-                    
-                    foreach ($files as $file) {
-                        $filePath = $file->getRealPath();
-                        $relativePath = basename($targetPath) . '/' . substr($filePath, strlen($targetPath) + 1);
-                        
-                        if ($file->isDir()) {
-                            $zip->addEmptyDir($relativePath);
-                        } else {
-                            $zip->addFile($filePath, $relativePath);
-                        }
-                    }
-                }
-            }
-            
-            $zip->close();
-            
-            header('Content-Type: application/zip');
-            header('Content-Disposition: attachment; filename="' . $zipName . '"');
-            header('Content-Length: ' . filesize($zipPath));
-            readfile($zipPath);
-            @unlink($zipPath);
-            exit;
-        } else {
-            $errorMsg = 'Bulk download failed: Could not create zip file';
-        }
-    } else {
-        $errorMsg = 'Bulk download failed: ZipArchive not available';
-    }
-}
 
 // Handle file/folder download
 if (isset($_POST['download'])) {
@@ -1434,22 +1436,18 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
                 </td>
                 <td>
                     <?php if ($itemToRename === $item): ?>
-                        </form>
-                        <form method="post" class="rename-form">
+                        <form method="post" class="rename-form" style="margin: 0;">
                             <input type="hidden" name="old_name" value="<?= htmlentities($item) ?>">
                             <input type="text" name="new_name" value="<?= htmlentities($item) ?>">
                             <button class="btn btn-primary btn-sm" type="submit">Save</button>
                         </form>
-                        <form method="post" id="file-form">
                     <?php elseif ($itemToChmod === $item): ?>
-                        </form>
-                        <form method="post" class="chmod-form">
+                        <form method="post" class="chmod-form" style="margin: 0;">
                             <input type="hidden" name="chmod_item" value="<?= htmlentities($item) ?>">
                             <input type="text" name="chmod_value" value="<?= $filePerms ?>" maxlength="3" placeholder="755">
                             <button class="btn btn-primary btn-sm" type="submit">Set</button>
                             <button class="btn btn-sm" type="button" onclick="location.reload();">Cancel</button>
                         </form>
-                        <form method="post" id="file-form">
                     <?php else: ?>
                         <span class="file-icon"><?= $isDirectory ? '/' : '' ?></span>
                         <?php if ($isDirectory): ?>
