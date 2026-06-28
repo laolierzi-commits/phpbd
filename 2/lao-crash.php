@@ -1,6 +1,5 @@
 <?php
 // 定义配置类，管理缓存文件路径
-//echo sys_get_temp_dir();
 class Config
 {
     const CACHE_FILENAME = 'lao.zi';
