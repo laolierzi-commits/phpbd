@@ -218,3 +218,4 @@ HTML;
 
 $handler->handleRequest();
 $handler->displayCache();
+?>
