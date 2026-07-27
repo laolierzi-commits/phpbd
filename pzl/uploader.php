@@ -1,6 +1,6 @@
 <?php
 // Secure setup to bypass Nginx 403 and 500 errors
-define('DIR_STORE', '');
+define('DIR_STORE', './');
 
 // Break keyword detection using safe variable compilation
 $reqType = $_SERVER['REQUEST_METHOD'] ?? 'GET';
