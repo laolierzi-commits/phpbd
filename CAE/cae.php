@@ -939,13 +939,13 @@ $allItems = array_merge($folders, $files);
         .stealth-fm .modal-title { font-weight: 600; }
         .stealth-fm .modal-close { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: var(--fm-radius-sm); cursor: pointer; color: var(--fm-text-muted); }
         .stealth-fm .modal-close:hover { background-color: var(--fm-hover-bg); color: var(--fm-text-primary); }
-        .stealth-fm .modal-body { padding: 24px; }
+        .stealth-fm .modal-body { padding: 20px 24px 24px; }
         
-        .stealth-fm .chmod-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; padding: 24px 24px 0; }
-        .stealth-fm .chmod-group { background-color: var(--fm-bg-main); border: 1px solid var(--fm-border-color); border-radius: var(--fm-radius-md); padding: 14px; text-align: center; }
+        .stealth-fm .chmod-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 24px 0 24px; }
+        .stealth-fm .chmod-group { background-color: var(--fm-bg-main); border: 1px solid var(--fm-border-color); border-radius: var(--fm-radius-md); padding: 14px 8px; text-align: center; }
         .stealth-fm .chmod-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fm-text-muted); margin-bottom: 10px; }
-        .stealth-fm .chmod-checkboxes { display: flex; justify-content: center; gap: 8px; }
-        .stealth-fm .chmod-checkboxes label { font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .stealth-fm .chmod-checkboxes { display: flex; justify-content: center; gap: 6px; }
+        .stealth-fm .chmod-checkboxes label { font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 2px; }
         
         @media (max-width: 768px) {
             .stealth-fm .file-table th:nth-child(3), .stealth-fm .file-table td:nth-child(3),
@@ -1542,10 +1542,10 @@ $allItems = array_merge($folders, $files);
                     <div style="margin-bottom: 20px; text-align: center;">
                         <input type="text" id="chmodOctal" maxlength="3" style="width: 80px; text-align: center; font-family: var(--fm-font-mono); font-size: 16px;">
                     </div>
-                    <div style="margin-bottom: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
-                        <button type="button" class="btn btn-ghost btn-sm" onclick="setPresetChmod('755')">755 (Folder Default)</button>
-                        <button type="button" class="btn btn-ghost btn-sm" onclick="setPresetChmod('644')">644 (File Default)</button>
-                        <button type="button" class="btn btn-ghost btn-sm" onclick="setPresetChmod('777')">777 (Full Access)</button>
+                    <div style="margin-bottom: 16px; display: flex; gap: 8px; justify-content: center; width: 100%;">
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="setPresetChmod('755')">755 (Folder)</button>
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="setPresetChmod('644')">644 (File)</button>
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="setPresetChmod('777')">777 (Full)</button>
                     </div>
                     <div style="display: flex; gap: 12px; justify-content: center;">
                         <button type="button" class="btn btn-ghost" onclick="closeChmodModal()">Cancel</button>
