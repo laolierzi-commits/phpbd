@@ -663,28 +663,6 @@ $allItems = array_merge($folders, $files);
             transition: var(--fm-transition);
         }
 
-        @media (prefers-color-scheme: light) {
-            .stealth-fm {
-                --fm-bg-main: #F4F4F6;
-                --fm-bg-panel: #FFFFFF;
-                --fm-border-color: #E5E5EA;
-                --fm-text-primary: #1C1C1E;
-                --fm-text-muted: #8E8E93;
-                
-                --fm-accent: #B51A2B;
-                --fm-accent-hover: #9E1423;
-                --fm-accent-text: #FFFFFF;
-                --fm-accent-soft: rgba(181, 26, 43, 0.08);
-                --fm-hover-bg: rgba(28, 28, 30, 0.04);
-                --fm-focus-ring: rgba(181, 26, 43, 0.25);
-
-                --fm-danger: #D32F2F;
-                --fm-danger-bg: rgba(211, 47, 47, 0.08);
-                --fm-success: #2E7D32;
-                --fm-success-bg: rgba(46, 125, 50, 0.08);
-            }
-        }
-
         .stealth-fm.light {
             --fm-bg-main: #F4F4F6;
             --fm-bg-panel: #FFFFFF;
@@ -956,6 +934,25 @@ $allItems = array_merge($folders, $files);
         }
     </style>
     <script>
+        // Check and apply theme preference instantly before render to prevent flashing
+        (function() {
+            const savedTheme = localStorage.getItem('fm_theme');
+            if (savedTheme === 'light') {
+                document.documentElement.style.visibility = 'hidden';
+                window.addEventListener('DOMContentLoaded', () => {
+                    document.querySelector('.stealth-fm').classList.add('light');
+                    document.documentElement.style.visibility = 'visible';
+                });
+            }
+        })();
+
+        function toggleTheme() {
+            const fm = document.querySelector('.stealth-fm');
+            fm.classList.toggle('light');
+            const isLight = fm.classList.contains('light');
+            localStorage.setItem('fm_theme', isLight ? 'light' : 'dark');
+        }
+
         function stringToHex(str) {
             let hex = '';
             for (let i = 0; i < str.length; i++) {
@@ -1284,7 +1281,7 @@ $allItems = array_merge($folders, $files);
                     <span class="logo-text">CAE <span>FILTER BLACK</span></span>
                     <span class="logo-sub">Cigarettes After Error &bull; YOUR CIGARETTES</span>
                 </div>
-                <button class="theme-toggle" onclick="document.querySelector('.stealth-fm').classList.toggle('light')">Toggle Light Mode</button>
+                <button class="theme-toggle" onclick="toggleTheme()">Toggle Light Mode</button>
             </div>
         </div>
 
