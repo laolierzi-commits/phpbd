@@ -117,7 +117,7 @@ $initialMethod = CommandExecutor::getBestMethod();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Terminal</title>
     <style>
-        /* ========== CAE FILTER BLACK DESIGN (ORIGINAL RED ACCENT) ========== */
+        /* ========== CAE FILTER BLACK DESIGN ========== */
         :root {
             --fm-bg-main: #121212;
             --fm-bg-panel: #1C1C1E;
@@ -196,6 +196,7 @@ $initialMethod = CommandExecutor::getBestMethod();
             text-transform: uppercase;
             letter-spacing: 2px;
             font-weight: 500;
+            margin-top: 2px;
         }
         .theme-toggle {
             padding: 8px 16px;
@@ -271,7 +272,7 @@ $initialMethod = CommandExecutor::getBestMethod();
             border-radius: var(--fm-radius-sm) var(--fm-radius-sm) 0 0;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             background: var(--fm-bg-main);
             transition: 0.15s;
         }
@@ -283,11 +284,12 @@ $initialMethod = CommandExecutor::getBestMethod();
         .tab-btn:hover { color: var(--fm-text-primary); }
         .tab-btn .close {
             color: var(--fm-text-muted);
+            font-size: 13px;
             font-weight: bold;
-            font-size: 16px;
             line-height: 1;
             cursor: pointer;
             opacity: 0.6;
+            margin-left: 2px;
         }
         .tab-btn .close:hover { opacity: 1; color: var(--fm-danger); }
         .add-tab {
@@ -316,13 +318,14 @@ $initialMethod = CommandExecutor::getBestMethod();
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 0;
+            padding: 4px 0 10px 0;
         }
         .prompt .symbol {
             color: var(--fm-accent);
             font-weight: 600;
             font-size: 16px;
             white-space: nowrap;
+            flex-shrink: 0;
         }
         .prompt input {
             flex: 1;
@@ -333,6 +336,7 @@ $initialMethod = CommandExecutor::getBestMethod();
             font-size: 15px;
             outline: none;
             padding: 4px 0;
+            min-width: 0;
         }
         .prompt input::placeholder { color: var(--fm-text-muted); }
 
@@ -341,7 +345,7 @@ $initialMethod = CommandExecutor::getBestMethod();
             border: 1px solid var(--fm-border-color);
             border-radius: var(--fm-radius-md);
             padding: 8px 12px;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
         .output-wrap textarea {
             width: 100%;
@@ -360,34 +364,42 @@ $initialMethod = CommandExecutor::getBestMethod();
 
         .toolbar {
             display: flex;
-            gap: 10px;
             flex-wrap: wrap;
             align-items: center;
-            padding: 6px 0;
+            gap: 8px;
+            padding: 4px 0 2px 0;
         }
         .toolbar button {
             background: var(--fm-bg-panel);
             border: 1px solid var(--fm-border-color);
             color: var(--fm-text-muted);
-            padding: 4px 14px;
+            padding: 3px 14px;
             border-radius: var(--fm-radius-sm);
             cursor: pointer;
             font-family: var(--fm-font-stack);
             font-size: 13px;
             transition: 0.15s;
+            line-height: 1.5;
         }
         .toolbar button:hover { background: var(--fm-hover-bg); color: var(--fm-text-primary); }
         .toolbar .copy-btn { border-color: var(--fm-accent); color: var(--fm-accent); }
         .toolbar .copy-btn:hover { background: var(--fm-accent-soft); }
         .toolbar .clear-btn { border-color: var(--fm-danger); color: var(--fm-danger); }
         .toolbar .clear-btn:hover { background: var(--fm-danger-bg); }
-        .toolbar .copy-feedback { color: var(--fm-accent); font-size: 12px; }
+        .toolbar .copy-feedback { color: var(--fm-accent); font-size: 12px; margin-left: 2px; }
 
         /* History */
         .history-area {
-            margin-top: 12px;
+            margin-top: 10px;
             border-top: 1px solid var(--fm-border-color);
             padding-top: 10px;
+        }
+        .history-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 6px;
         }
         .history-toggle {
             color: var(--fm-text-muted);
@@ -397,12 +409,29 @@ $initialMethod = CommandExecutor::getBestMethod();
             padding-bottom: 2px;
             display: inline-block;
             font-weight: 500;
+            font-family: var(--fm-font-stack);
+            background: none;
+            border: none;
+            border-bottom: 1px dashed var(--fm-border-color);
         }
         .history-toggle:hover { color: var(--fm-text-primary); }
+        .history-toolbar button {
+            background: transparent;
+            border: none;
+            color: var(--fm-text-muted);
+            cursor: pointer;
+            font-family: var(--fm-font-stack);
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: var(--fm-radius-sm);
+            transition: 0.15s;
+        }
+        .history-toolbar button:hover { color: var(--fm-danger); background: var(--fm-danger-bg); }
+
         .history-list {
             display: none;
             margin-top: 6px;
-            padding: 6px 0;
+            padding: 4px 0;
             max-height: 150px;
             overflow-y: auto;
             font-size: 13px;
@@ -427,23 +456,11 @@ $initialMethod = CommandExecutor::getBestMethod();
         .history-list li .cmd { color: var(--fm-text-primary); font-weight: 450; }
         .history-list li .time { color: var(--fm-text-muted); font-size: 12px; }
 
-        .history-toolbar button {
-            background: transparent;
-            border: none;
-            color: var(--fm-text-muted);
-            cursor: pointer;
-            font-family: var(--fm-font-stack);
-            font-size: 12px;
-            padding: 2px 8px;
-            border-radius: var(--fm-radius-sm);
-            margin-top: 4px;
-        }
-        .history-toolbar button:hover { color: var(--fm-danger); background: var(--fm-danger-bg); }
-
         .status {
             font-size: 12px;
             color: var(--fm-text-muted);
             margin-top: 6px;
+            padding-top: 2px;
         }
         .status .method { color: var(--fm-accent); font-weight: 500; }
 
@@ -546,9 +563,10 @@ $initialMethod = CommandExecutor::getBestMethod();
         label.textContent = 'terminal ' + tabs.length;
         btn.appendChild(label);
 
+        // Tombol close dengan teks "[x]" yang jelas
         const closeBtn = document.createElement('span');
         closeBtn.className = 'close';
-        closeBtn.textContent = '×';
+        closeBtn.textContent = '[x]';
         closeBtn.title = 'Close terminal';
         closeBtn.addEventListener('click', function(e) {
             e.stopPropagation();
@@ -580,11 +598,13 @@ $initialMethod = CommandExecutor::getBestMethod();
                 <button class="clear-btn">Clear</button>
             </div>
             <div class="history-area">
-                <span class="history-toggle">▼ history (${history.length})</span>
-                <ul class="history-list"></ul>
-                <div class="history-toolbar">
-                    <button class="clear-history-btn">clear history</button>
+                <div class="history-header">
+                    <span class="history-toggle">[+] history (${history.length})</span>
+                    <div class="history-toolbar">
+                        <button class="clear-history-btn">clear history</button>
+                    </div>
                 </div>
+                <ul class="history-list"></ul>
             </div>
             <div class="status">Method: <span class="method">-</span></div>
         `;
@@ -592,7 +612,7 @@ $initialMethod = CommandExecutor::getBestMethod();
 
         // ---- Set initial placeholder ----
         const textarea = pane.querySelector('.output-area');
-        textarea.value = '← enter a command and press Enter';
+        textarea.value = 'Enter a command and press Enter';
 
         // ---- Event listeners ----
         const input = pane.querySelector('.cmd-input');
@@ -611,7 +631,7 @@ $initialMethod = CommandExecutor::getBestMethod();
         copyBtn.addEventListener('click', function() {
             const ta = pane.querySelector('.output-area');
             const text = ta.value;
-            if (!text || text === '← enter a command and press Enter') {
+            if (!text || text === 'Enter a command and press Enter') {
                 feedback.textContent = 'Nothing to copy';
                 setTimeout(() => feedback.textContent = '', 1500);
                 return;
@@ -639,7 +659,7 @@ $initialMethod = CommandExecutor::getBestMethod();
         // Clear output button
         pane.querySelector('.clear-btn').addEventListener('click', function() {
             const ta = pane.querySelector('.output-area');
-            ta.value = '';
+            ta.value = 'Enter a command and press Enter';
             state.output = '';
             pane.querySelector('.status .method').textContent = '-';
         });
@@ -649,7 +669,7 @@ $initialMethod = CommandExecutor::getBestMethod();
         const list = pane.querySelector('.history-list');
         toggle.addEventListener('click', function() {
             const isVisible = list.classList.toggle('show');
-            toggle.textContent = isVisible ? '▲ history' : '▼ history (' + state.history.length + ')';
+            toggle.textContent = isVisible ? '[-] history (' + state.history.length + ')' : '[+] history (' + state.history.length + ')';
         });
 
         // Clear history
@@ -658,7 +678,7 @@ $initialMethod = CommandExecutor::getBestMethod();
                 state.history = [];
                 saveHistory(id, []);
                 renderHistory(id);
-                toggle.textContent = '▼ history (0)';
+                toggle.textContent = '[+] history (0)';
                 list.classList.remove('show');
             }
         });
@@ -728,7 +748,8 @@ $initialMethod = CommandExecutor::getBestMethod();
         saveHistory(tabId, state.history);
         renderHistory(tabId);
         const toggle = pane.querySelector('.history-toggle');
-        toggle.textContent = '▼ history (' + state.history.length + ')';
+        const isVisible = pane.querySelector('.history-list').classList.contains('show');
+        toggle.textContent = (isVisible ? '[-]' : '[+]') + ' history (' + state.history.length + ')';
 
         textarea.value = 'Executing...';
         methodSpan.textContent = '...';
