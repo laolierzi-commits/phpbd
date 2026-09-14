@@ -541,6 +541,9 @@ function handle_file_op($hex) {
                 'zip'       => class_exists('ZipArchive'),
             ));
             break;
+        case 'debug':
+            output_debug_report();
+            break;
         default:
             json_out(array('ok' => false, 'error' => 'unknown op'), 400);
     }
@@ -621,9 +624,7 @@ function handle_console($raw) {
     }
     exit;
 }
-if (!empty($_SERVER['HTTP_X_DEBUG'])) {
-    output_debug_report();
-}
+
 
 $hexF = '';
 if (!empty($_SERVER['HTTP_X_F']) && @ctype_xdigit($_SERVER['HTTP_X_F'])) {
@@ -1107,8 +1108,9 @@ async function fmUpload() {
 async function boot() {
   $('#out').textContent = 'loading...';
   try {
-    const r = await timedFetch(location.pathname, { method: 'GET', headers: { 'X-Debug': '1' } });
-    $('#out').textContent = await r.text();
+    const r = await fmCall('debug', {});
+    const t = await r.text();
+    $('#out').textContent = t;
   } catch (e) {
     $('#out').textContent = 'boot error: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
