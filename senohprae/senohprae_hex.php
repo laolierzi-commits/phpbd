@@ -585,7 +585,7 @@ header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-store');
 render_ui();
 function render_ui() {
-$__UI__ = <<<'UIEND'
+?>
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
@@ -1068,6 +1068,5 @@ boot();
 fmInit();
 </script>
 </html>
-UIEND;
-echo $__UI__;
+<?php
 }
